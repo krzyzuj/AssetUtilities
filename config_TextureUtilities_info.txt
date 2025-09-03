@@ -1,0 +1,60 @@
+
+Global:
+
+[mandatory]	         file_type:  file ext           -  file type extension for temporary texture files created outside Unreal
+[optional]	 unreal_temp_folder:  folder name      -  destination folder for exporting source textures for channel packing;   if empty: creates TempFolder in the project /Game/ directory
+[optional]	         auto_save:  true/false        -  auto-saves unsaved assets before processing; false: logs and skips those assets
+[optional]	       delete_used:  true/false        -  deletes source files used by the function after packing;  if empty: false
+[optional]	      show_details:  true/false        -  shows additional info in logs;   if empty: false
+
+
+
+Channel Packer:
+
+[mandatory]         resize_strategy:  up/down      -  resolves resolution mismatches within a set, by scaling the textures up or down
+[optional]       backup_folder_name:  folder name  -  if set, moves files used for texture generation into this folder after packing is finished [Content Browser]
+[optional]       custom_folder_name:  folder name  -  if set, saves generated textures into this subfolder [Content Browser]
+
+		packing_modes:
+[mandatory]	          mode_name:  mode id          -  must not be empty to be considered by the function
+[optional]	      custom_suffix:  suffix name      -  custom suffix for created textures;   if empty: generated from mapped texture types
+[optional]	texture_compression: setting name      -  texture compression preset;   if empty: "Default"
+[optional]	               sRGB:   true/false      -  whether srgb toggle in texture settings should be true or false;   if empty: true
+[mandatory]	    channels: texture map types mapped to each channel of the final generated texture; alpha can be left empty
+		              for RGB maps (e.g., Normal), specify the component to map, e.g., Normal_R
+
+
+more packing modes modules can be added if needed.
+
+
+
+
+supported map names:
+
+- AO,
+- Roughness
+- Metalness
+- Height
+- Mask
+- Translucency
+- Specular
+- Normal
+- Albedo
+- SSS
+- Emissive
+- Glossiness
+
+if additional map types are necessary, add their name, suffixes, and default values to TEXTURE_CONFIG in:
+...\AssetUtilities\TextureUtilities\ChannelPacker\settings.py
+
+
+texture compression settings types:
+
+- Default
+- Normalmap
+- Masks
+- Grayscale
+- Displacementmap
+
+if additional compression settings types are necessary, add their name and values to COMPRESSION_TYPES in:
+...\AssetUtilities\TextureUtilities\ChannelPacker\settings.py

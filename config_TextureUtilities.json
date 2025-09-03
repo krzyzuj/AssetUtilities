@@ -1,0 +1,56 @@
+{
+  "global": {
+    "FILE_TYPE": "png",
+    "UNREAL_TEMP_FOLDER": "",
+    "AUTO_SAVE": true,
+    "DELETE_USED": false,
+    "SHOW_DETAILS": true
+  },
+
+
+
+  "channel_packer": {
+    "RESIZE_STRATEGY": "down",
+    "BACKUP_FOLDER_NAME": "",
+    "CUSTOM_FOLDER_NAME": "created_maps",
+
+    "PACKING_MODES": [
+      {
+        "mode_name": "ARM",
+        "custom_suffix": "",
+        "texture_compression": "",
+        "sRGB": "false",
+        "channels": {
+          "R": "AO",
+          "G": "Roughness",
+          "B": "Metalness",
+          "A": null
+        }
+      },
+      {
+        "mode_name": "NH",
+        "custom_suffix": "",
+        "texture_compression": "",
+        "sRGB": "false",
+        "channels": {
+          "R": "Normal.R",
+          "G": "Normal.G",
+          "B": "Height",
+          "A": null
+        }
+      },
+      {
+        "mode_name": "",
+        "custom_suffix": "",
+        "texture_compression": "",
+        "sRGB": "",
+        "channels": {
+          "R": null,
+          "G": null,
+          "B": null,
+          "A": null
+        }
+      }
+    ]
+  }
+}

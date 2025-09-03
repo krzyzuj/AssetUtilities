@@ -1,0 +1,63 @@
+
+""" Global settings and constants shared across all texture modules. """
+
+import json
+from pathlib import Path
+from typing import Dict, List, NamedTuple, Set
+
+import unreal
+
+
+class CompressionSettings(NamedTuple):
+    tex_comp_type: unreal.TextureCompressionSettings
+    default_srgb: bool
+# Unreal's texture compression settings.
+
+
+def _as_bool(v) -> bool:
+# Converts .json input (bool/int/str/None) to a real bool;
+# Avoids the case where a non-empty string like "False" is treated as True.
+
+    if isinstance(v, bool): return v
+    if isinstance(v, str):
+        input_str = v.strip().lower()
+        if input_str == "": return False
+        return input_str in ("1","true","yes","on")
+    return bool(v)
+
+
+
+#                                           === Loading JSON file ===
+
+_BASE_DIR = Path(__file__).resolve().parents[1]
+_config_path = _BASE_DIR / "config_TextureUtilities.json"
+with _config_path.open("r", encoding="utf-8") as f:
+    _config_data = json.load(f)
+
+
+
+_global_cfg = _config_data.get("global", {})
+
+# Global Values:
+FILE_TYPE: str = _global_cfg.get("FILE_TYPE", "png").strip() # File type extension for temporary texture files created outside Unreal.
+UNREAL_TEMP_FOLDER: str = _global_cfg.get("UNREAL_TEMP_FOLDER", "").strip() # Destination folder for exporting source textures for channel packing.
+AUTO_SAVE: bool = _as_bool(_global_cfg.get("AUTO_SAVE", False))  # If true, auto-saves unsaved assets; otherwise logs and skips them.
+DELETE_USED: bool = _as_bool(_global_cfg.get("DELETE_USED", False)) # If true, deletes the files used by the function.
+SHOW_DETAILS: bool = _as_bool(_global_cfg.get("SHOW_DETAILS", False)) # If true, shows details like exact resolution when printing logs.
+
+
+
+
+
+#                                           === Constants ===
+
+ALLOWED_FILE_TYPES: Set[str] = {"png", "jpg", "jpeg", "tga"}
+SIZE_SUFFIXES: List[str] = ["512", "1k", "2k", "4k", "8k", ""]
+
+COMPRESSION_TYPES: Dict[str, CompressionSettings] = {
+    "Default":        CompressionSettings(unreal.TextureCompressionSettings.TC_DEFAULT, True),
+    "Normalmap":      CompressionSettings(unreal.TextureCompressionSettings.TC_NORMALMAP, False),
+    "Masks":          CompressionSettings(unreal.TextureCompressionSettings.TC_MASKS, False),
+    "Grayscale":      CompressionSettings(unreal.TextureCompressionSettings.TC_GRAYSCALE, False),
+    "Displacementmap":CompressionSettings(unreal.TextureCompressionSettings.TC_DISPLACEMENTMAP, False),
+}
