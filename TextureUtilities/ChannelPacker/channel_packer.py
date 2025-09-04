@@ -15,19 +15,19 @@ from ..image_lib import (
 
 from ..texture_classes import (MapNameAndRes, TextureMapData)
 
-from ..texture_settings import (ALLOWED_FILE_TYPES, SHOW_DETAILS)
+from ..texture_settings import (ALLOWED_FILE_TYPES, BACKUP_FOLDER_NAME, DEST_FOLDER_NAME, SHOW_DETAILS)
 
 from ..texture_utils import (check_texture_suffix_mismatch, close_image_files, detect_size_suffix,
-    group_paths_by_folder, is_power_of_two, log, match_suffixes, resolution_to_suffix,)
+    group_paths_by_folder, is_power_of_two, log, make_output_dirs, match_suffixes, resolution_to_suffix, validate_safe_folder_name)
 
 from .classes import (
     ChannelMapping, PackingMode, SetEntry, TextureMapCollection,
     TextureNameInfo, TextureSet, ValidModeEntry)
 
-from .settings import (TextureTypeConfig, BACKUP_FOLDER_NAME, CUSTOM_FOLDER_NAME, PACKING_MODES, RESIZE_STRATEGY, TEXTURE_CONFIG)
+from .settings import (TextureTypeConfig, PACKING_MODES, RESIZE_STRATEGY, TEXTURE_CONFIG)
 
-from .io_backend import (CPContext, validate_safe_folder_name, validate_export_ext_ctx,
-    split_by_parent, make_output_dirs, list_initial_files, prepare_workspace, save_image, move_used_map, cleanup)
+from .io_backend import (CPContext, validate_export_ext_ctx,
+    split_by_parent, list_initial_files, prepare_workspace, save_image, move_used_map, cleanup)
 
 
 # Basic data structure bundling textures and their metadata into a texture set:
@@ -260,13 +260,13 @@ def channel_packer(input_folder: Optional[str] = None) -> None:
     log("All processing done.", "complete")
 
 
-    if CUSTOM_FOLDER_NAME.strip() and created_any:
+    if DEST_FOLDER_NAME.strip() and created_any:
         if multiple_groups:
-            log(f"Packed maps saved to '{CUSTOM_FOLDER_NAME}' subfolder(s) inside processed folders.", "info")
+            log(f"Packed maps saved to '{DEST_FOLDER_NAME}' subfolder(s) inside processed folders.", "info")
         else:
             only_group = next(iter(groups))
             final_path = work_dir if only_group in (".", "") else os.path.join(work_dir, only_group) # In case the only processed textures were in the subfolder.
-            abs_out = os.path.abspath(os.path.join(final_path, CUSTOM_FOLDER_NAME))
+            abs_out = os.path.abspath(os.path.join(final_path, DEST_FOLDER_NAME))
             log(f"Packed maps saved to: {abs_out}", "info")
         # For a single group run prints the absolute output path for the only processed folder.
 
@@ -302,7 +302,7 @@ def _validate_config(resize_strategy: str, ctx: Optional[CPContext] = None) -> N
 # Later on the config is checked for packing mode validity when running valid_modes for each packing mode.
 
     bak: str = validate_safe_folder_name(BACKUP_FOLDER_NAME)
-    custom: str = validate_safe_folder_name(CUSTOM_FOLDER_NAME)
+    custom: str = validate_safe_folder_name(DEST_FOLDER_NAME)
     # Checks if folder names don't contain unsupported characters.
 
     validate_export_ext_ctx(ctx) # Validates the selected output extension and stores it in context

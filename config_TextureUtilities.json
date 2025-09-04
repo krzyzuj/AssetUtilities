@@ -1,19 +1,19 @@
 {
   "global": {
-    "FILE_TYPE": "png",
-    "UNREAL_TEMP_FOLDER": "",
     "AUTO_SAVE": true,
-    "DELETE_USED": false,
     "SHOW_DETAILS": true
   },
 
-
+ "generators": {
+   "FILE_TYPE": "png",
+   "UNREAL_TEMP_FOLDER": "",
+   "DEST_FOLDER_NAME": "created_maps",
+   "BACKUP_FOLDER_NAME": "",
+   "DELETE_USED": false
+ },
 
   "channel_packer": {
     "RESIZE_STRATEGY": "down",
-    "BACKUP_FOLDER_NAME": "",
-    "CUSTOM_FOLDER_NAME": "created_maps",
-
     "PACKING_MODES": [
       {
         "mode_name": "ARM",

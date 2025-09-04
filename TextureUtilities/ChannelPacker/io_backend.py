@@ -3,7 +3,6 @@
 #  It is now split into two separate packages, but still allows the channel_packer function to be used interchangeably between them.
 
 import os
-import re
 import shutil
 from collections import defaultdict
 from dataclasses import dataclass, field
@@ -13,12 +12,12 @@ import unreal
 
 from ..image_lib import ImageObj, save_image as save_image_file
 
-from ..texture_settings import (AUTO_SAVE, DELETE_USED)
+from ..texture_settings import (AUTO_SAVE, BACKUP_FOLDER_NAME, DELETE_USED)
 
 from ..texture_utils import (ensure_asset_saved, get_selected_assets, get_tex_compression_settings,
     group_paths_by_folder, is_asset_data, log, package_to_object_path, resolve_work_dir, validate_export_ext)
 
-from .settings import (BACKUP_FOLDER_NAME, CUSTOM_FOLDER_NAME, PACKING_MODES)
+from .settings import (PACKING_MODES)
 
 
 @dataclass
@@ -34,18 +33,6 @@ class CPContext:
 
 
 #                                     === Channel Packer core interface ===
-
-def validate_safe_folder_name(raw_name: Optional[str]) -> str:
-# Validates that the custom folder name doesn't include unsupported characters.
-
-    name: str = (raw_name or "").strip()
-    if not name:
-        return ""
-    if not re.fullmatch(r"[A-Za-z0-9_]+", name):
-        log(f"Aborted: '{raw_name}' is invalid. Use only letters, digits, and underscore; no spaces", "error")
-        # Prints error.
-        raise SystemExit(1)
-    return name
 
 
 def validate_export_ext_ctx(ctx: "CPContext" = None) -> None:
@@ -79,26 +66,6 @@ def split_by_parent(ctx: "CPContext") -> Dict[str, List[str]]:
         groups[key].append(name)
 
     return {k: sorted(v) for k, v in sorted(groups.items(), key=lambda kv: kv[0])}
-
-
-
-
-def make_output_dirs(base_path: str) -> tuple[str, Optional[str]]:
-# Returns the output and optional backup directories for a given base path:
-# ctx used only in the Unreal version.
-
-    base_path = os.path.abspath(base_path or ".")
-    out_name = (CUSTOM_FOLDER_NAME or "").strip()
-    out_dir = os.path.join(base_path, out_name) if out_name else base_path
-    os.makedirs(out_dir, exist_ok=True)
-
-    bak_dir = None
-    bak_name = (BACKUP_FOLDER_NAME or "").strip()
-    if bak_name:
-        bak_dir = os.path.join(base_path, bak_name)
-        os.makedirs(bak_dir, exist_ok=True)
-
-    return out_dir, bak_dir
 
 
 def list_initial_files(input_folder: str, ctx: "CPContext", ) -> List[str]:

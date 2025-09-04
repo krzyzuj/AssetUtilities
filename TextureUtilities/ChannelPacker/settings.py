@@ -15,13 +15,9 @@ with _config_path.open("r", encoding="utf-8") as f:
     _config_data = json.load(f)
 
 
-# Assigning config values:
-_channel_cfg = _config_data.get("channel_packer", {})
-
 # Channel Packer:
+_channel_cfg = _config_data.get("channel_packer", {})
 RESIZE_STRATEGY: str = _channel_cfg.get("RESIZE_STRATEGY", "down").strip() # Specifies how textures are rescaled when resolutions differ within a set: down to the smallest or up to the largest.
-BACKUP_FOLDER_NAME: str = _channel_cfg.get("BACKUP_FOLDER_NAME", "").strip() # If provided, moves source maps used during generation into a backup folder after creating the channel-packed map.
-CUSTOM_FOLDER_NAME: str = _channel_cfg.get("CUSTOM_FOLDER_NAME", "created_maps").strip() # If provided, places generated channel-packed maps into a custom folder.
 PACKING_MODES: list[PackingMode] = _channel_cfg.get("PACKING_MODES", []) # Uses TEXTURE_CONFIG keys for texture maps to be put into channels. The packing mode is skipped if "name": is empty.
 
 

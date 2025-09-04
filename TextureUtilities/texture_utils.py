@@ -12,7 +12,7 @@ import unreal
 from .image_lib import close_image
 
 from .texture_classes import (MapNameAndRes, TextureMapData)
-from .texture_settings import (ALLOWED_FILE_TYPES, COMPRESSION_TYPES, FILE_TYPE, SIZE_SUFFIXES, UNREAL_TEMP_FOLDER, CompressionSettings)
+from .texture_settings import (ALLOWED_FILE_TYPES, BACKUP_FOLDER_NAME, DEST_FOLDER_NAME, COMPRESSION_TYPES, FILE_TYPE, SIZE_SUFFIXES, UNREAL_TEMP_FOLDER, CompressionSettings)
 
 
 LOG_TYPES = ["info", "warn", "error", "skip", "complete"] # Defines log types; the backend handles printing for the Windows CLI and Unreal Engine.
@@ -260,6 +260,25 @@ def list_selected_assets() -> List[str]:
     return sorted(assets_pkg_paths)
 
 
+def make_output_dirs(base_path: str) -> tuple[str, Optional[str]]:
+# Returns the output and optional backup directories for a given base path:
+# ctx used only in the Unreal version.
+
+    base_path = os.path.abspath(base_path or ".")
+    out_name = (DEST_FOLDER_NAME or "").strip()
+    out_dir = os.path.join(base_path, out_name) if out_name else base_path
+    os.makedirs(out_dir, exist_ok=True)
+
+    bak_dir = None
+    bak_name = (BACKUP_FOLDER_NAME or "").strip()
+    if bak_name:
+        bak_dir = os.path.join(base_path, bak_name)
+        os.makedirs(bak_dir, exist_ok=True)
+
+    return out_dir, bak_dir
+
+
+
 def match_suffixes(name_lower: str, type_suffix: str, size_suffix: str) -> Optional[str]:
     # Takes into account different naming conventions, returns the regex pattern that matches one.
     # type...size, size...type, ...type
@@ -368,3 +387,16 @@ def validate_export_ext() -> str:
         log(f"Invalid file type '{FILE_TYPE}' (allowed: {log_allowed_ext}); falling back to 'png'", "warn")
         ext = "png"
     return ext
+
+
+def validate_safe_folder_name(raw_name: Optional[str]) -> str:
+# Validates that the custom folder name doesn't include unsupported characters.
+
+    name: str = (raw_name or "").strip()
+    if not name:
+        return ""
+    if not re.fullmatch(r"[A-Za-z0-9_]+", name):
+        log(f"Aborted: '{raw_name}' is invalid. Use only letters, digits, and underscore; no spaces", "error")
+        # Prints error.
+        raise SystemExit(1)
+    return name

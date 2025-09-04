@@ -35,16 +35,18 @@ with _config_path.open("r", encoding="utf-8") as f:
     _config_data = json.load(f)
 
 
-
-_global_cfg = _config_data.get("global", {})
-
 # Global Values:
-FILE_TYPE: str = _global_cfg.get("FILE_TYPE", "png").strip() # File type extension for temporary texture files created outside Unreal.
-UNREAL_TEMP_FOLDER: str = _global_cfg.get("UNREAL_TEMP_FOLDER", "").strip() # Destination folder for exporting source textures for channel packing.
+_global_cfg = _config_data.get("global", {})
 AUTO_SAVE: bool = _as_bool(_global_cfg.get("AUTO_SAVE", False))  # If true, auto-saves unsaved assets; otherwise logs and skips them.
-DELETE_USED: bool = _as_bool(_global_cfg.get("DELETE_USED", False)) # If true, deletes the files used by the function.
 SHOW_DETAILS: bool = _as_bool(_global_cfg.get("SHOW_DETAILS", False)) # If true, shows details like exact resolution when printing logs.
 
+# Generators:
+_generators_cfg = _config_data.get("generators", {})
+FILE_TYPE: str = _generators_cfg.get("FILE_TYPE", "png").strip() # File type extension for temporary texture files created outside Unreal.
+UNREAL_TEMP_FOLDER: str = _generators_cfg.get("UNREAL_TEMP_FOLDER", "").strip() # Destination folder for exporting source textures for channel packing.
+DEST_FOLDER_NAME: str = _generators_cfg.get("DEST_FOLDER_NAME", "").strip() # If provided, places generated channel-packed maps into a custom folder.
+BACKUP_FOLDER_NAME: str = _generators_cfg.get("BACKUP_FOLDER_NAME", "").strip() # If provided, moves source maps used during generation into a backup folder after creating the channel-packed map.
+DELETE_USED: bool = _as_bool(_generators_cfg.get("DELETE_USED", False)) # If true, deletes the files used by the function.
 
 
 
