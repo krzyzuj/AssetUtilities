@@ -4,7 +4,7 @@
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple, TypedDict, NotRequired
 
-from ..texture_classes import (TextureMapData)
+from ..texture_classes import TextureMapData
 
 
 #                                               === TypedDicts ===
@@ -39,10 +39,6 @@ class TextureData(TypedDict):
     declared_suffix: str # Declared size suffix in the filename (if present).
     filename: str # Case-sensitive filename.
 
-
-class TextureTypeConfig(TypedDict):
-    suffixes: list[str] # Possible suffixes for a given texture map type, e.g., ["ao", "ambientocclusion", "occlusion", "ambient"].
-    default: tuple[str, int]  # Default values for grayscale or RGB images.
 
 
 

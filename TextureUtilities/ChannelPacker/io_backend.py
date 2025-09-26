@@ -2,6 +2,11 @@
 """ Input processing backend: unifies system CLI and Unreal Engine so the main channel_packer logic is platform-agnostic. """
 #  It is now split into two separate packages, but still allows the channel_packer function to be used interchangeably between them.
 
+
+
+
+
+
 import os
 import shutil
 from collections import defaultdict
@@ -10,22 +15,31 @@ from typing import Dict, List, Optional, Set, Tuple
 
 import unreal
 
-from ..image_lib import ImageObj, save_image as save_image_file
+from ...common_utils import log
 
-from ..texture_settings import (AUTO_SAVE, BACKUP_FOLDER_NAME, DELETE_USED)
+from ..image_lib import (ImageObj, save_image as save_image_file)
 
-from ..texture_utils import (ensure_asset_saved, get_selected_assets, get_tex_compression_settings,
-    group_paths_by_folder, is_asset_data, log, package_to_object_path, resolve_work_dir, validate_export_ext)
+from ..texture_settings import (AUTO_SAVE, BACKUP_FOLDER_NAME, EXR_SRGB_CURVE, DELETE_USED)
 
-from .settings import (PACKING_MODES)
+from ..texture_utils import (ensure_asset_saved, export_temp_file, get_selected_assets, get_tex_compression_settings,
+        group_paths_by_folder, is_asset_data, package_to_object_path, resolve_work_dir, validate_export_ext)
 
+from .settings import PACKING_MODES
+
+
+
+@dataclass
+class ConvertedEntry:
+    set_key: Optional[str] = None # Texture set name, added later.
+    map_type: Optional[str] = None # Texture type name.
 
 @dataclass
 class CPContext:
     work_dir: str = "" # Absolute path for a temporary folder.
+    export_ext: str = "png" # Validated file extension set in config. For now is set to png to simplify json config.
     selection_paths: Dict[str, str] = field(default_factory=dict)  # Key is the asset's package path, value is the absolute path of a file when exported to a temporary folder
-    export_ext: str = "" # Validated file extension set in config.
     modes_compression_type: Dict[str, Tuple[unreal.TextureCompressionSettings, bool]] = field(default_factory=dict) # Compression setting for imported packed textures for each mode.
+    converted_from_raw: Dict[str, ConvertedEntry] = field(default_factory=dict) # Collection of temporary converted .exr files for processing in the main module, their texture set name and its texture type.
     temp_path_already_exist: bool = False # If True, then at the end of the channel_packer the main temp directory isn't deleted not to accidentally delete existing files.
     created_sub_dirs: Set[str] = field(default_factory=set)  # Set of absolute paths to subfolders created in this run; used for cleanup.
 
@@ -35,17 +49,23 @@ class CPContext:
 #                                     === Channel Packer core interface ===
 
 
-def validate_export_ext_ctx(ctx: "CPContext" = None) -> None:
-    # ctx wrapper for a regular function.
 
+
+def validate_export_ext_ctx(ctx: "CPContext" = None) -> None:
+# Ctx wrapper for a regular function.
+
+    if ctx is None:
+        return
     ext = validate_export_ext()
-    ctx.export_ext = ext
+    # ctx.export_ext = ext # Legacy, now just uses png to simplify the setup.
+    ctx.export_ext = "png"
+
     return
 
 
 def split_by_parent(ctx: "CPContext") -> Dict[str, List[str]]:
 # Groups absolute paths from ctx.selection_paths values by their parent directory relative to ctx.work_dir.
-# Used to bind together asset in Content Browser, and it's exported temporary file on the drive.
+# Used to bind together asset in Content Browser, and its exported temporary file on the drive.
 # Returns a sorted rel_parent: [file names] map.
 
     files_abs: List[str] = [v for v in ctx.selection_paths.values() if v]
@@ -107,6 +127,7 @@ def prepare_workspace(_unused: List[str], ctx: "CPContext") -> None:
 # Exports assets whose package paths are keys in ctx.selection_paths into a temporary folder.
 # Writes each absolute exported file path back to ctx.selection_paths.
 
+
 # Setting Texture Compression Settings per mode:
     packing_mode_compression_map(ctx)
 
@@ -115,7 +136,7 @@ def prepare_workspace(_unused: List[str], ctx: "CPContext") -> None:
     work_dir = ctx.work_dir
 
 
-# Ensuring all assets are saved before beginning working on them:
+# Preparing the assets:
     cleaned: Dict[str, str] = {}
     for pkg in list(ctx.selection_paths.keys()):
         if ensure_asset_saved(pkg, auto_save=AUTO_SAVE):
@@ -123,10 +144,7 @@ def prepare_workspace(_unused: List[str], ctx: "CPContext") -> None:
         else:
             log(f"Skipping unsaved asset: {pkg}", "warn")
     ctx.selection_paths = cleaned
-
-
     # Checks if all selected assets are saved. If specified in the config, saves the unsaved files too.
-
 
     groups: Dict[str, List[str]] = group_paths_by_folder(list(ctx.selection_paths.keys()))
     # Groups asset package paths by their parent folder relative to /Game/ folder in Content Browser.
@@ -140,41 +158,34 @@ def prepare_workspace(_unused: List[str], ctx: "CPContext") -> None:
             out_dir = os.path.join(work_dir, safe_rel)
             os.makedirs(out_dir, exist_ok=True)
             sub_folder_path = os.path.abspath(out_dir).replace("\\", "/")
+    # Sets the path for a temporary file extraction.
 
 
 # Exporting assets:
         for pkg_path in sorted(set(pkg_paths)):
             asset_name: str = pkg_path.rsplit("/", 1)[-1]
-            object_path: str  = package_to_object_path(pkg_path)
-            asset: unreal.Object = unreal.EditorAssetLibrary.load_asset(object_path)
+            object_path: str = package_to_object_path(pkg_path)
+            asset = unreal.EditorAssetLibrary.load_asset(object_path)
 
-            ext = ctx.export_ext or "png"
-            final_path: str = os.path.join(out_dir, f"{asset_name}.{ext}")
+            exported_file: tuple[Optional[str], bool] = export_temp_file(asset, out_dir, asset_name, pkg_path, exr_srgb_curve=EXR_SRGB_CURVE)
+            exported_path, was_float = exported_file
+            if not exported_path:
+                continue
 
-            task = unreal.AssetExportTask()
-            task.object = asset
-            task.filename = final_path
-            task.automated = True
-            task.prompt = False
-            task.replace_identical = True
+            abs_path: str = os.path.abspath(exported_path).replace("\\", "/")
+            ctx.selection_paths[pkg_path] = abs_path
 
+            if was_float:
+                ctx.converted_from_raw[abs_path] = ConvertedEntry()
+            # Stores a converted file path for logs.
 
-# Stores the absolute export path ase a value for each asset's key in ctx.selection_paths
-            ok = unreal.Exporter.run_asset_export_task(task)
-            if ok:
-                abs_path = os.path.abspath(final_path).replace("\\", "/")
-                ctx.selection_paths[pkg_path] = abs_path
-                if sub_folder_path:
-                    ctx.created_sub_dirs.add(sub_folder_path) # Used by the cleanup_temp_folders to delete each subfolder
-            else:
-                log("Error while exporting files to a temporary folder", "error")
-
+            if sub_folder_path:
+                ctx.created_sub_dirs.add(sub_folder_path)
+            # Adds path for created sub dirs, used later for cleanup.
 
 def save_image(img: ImageObj, out_dir: str, filename: str, mode_name: str | None, ctx: "CPContext") -> None:
 # Writes image to a temp file in out_dir, then imports it into the Content Browser to a corresponding folder with proper texture compression setting.
 # Deletes the temp file afterward.
-# Returns the imported asset's package path.
-
 
 # Creating final paths in Content Browser:
     work_dir = ctx.work_dir
@@ -186,7 +197,7 @@ def save_image(img: ImageObj, out_dir: str, filename: str, mode_name: str | None
 
 
 # Writing a temporary file into out_dir:
-    ext = ctx.export_ext
+    ext: str = ctx.export_ext
     os.makedirs(out_dir, exist_ok=True)
     tmp_file = os.path.join(out_dir, f"{filename}.{ext}")
     try:
@@ -227,7 +238,6 @@ def save_image(img: ImageObj, out_dir: str, filename: str, mode_name: str | None
 
             if tex.get_editor_property("sRGB") != srgb:
                 tex.set_editor_property("sRGB", srgb)
-
 
             if AUTO_SAVE:
                 unreal.EditorAssetLibrary.save_loaded_asset(tex, only_if_is_dirty=True)

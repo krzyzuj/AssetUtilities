@@ -9,6 +9,7 @@
    "UNREAL_TEMP_FOLDER": "",
    "DEST_FOLDER_NAME": "created_maps",
    "BACKUP_FOLDER_NAME": "",
+   "EXR_SRGB_CURVE": true,
    "DELETE_USED": false
  },
 
@@ -18,8 +19,8 @@
       {
         "mode_name": "ARM",
         "custom_suffix": "",
-        "texture_compression": "",
-        "sRGB": "false",
+        "texture_compression": "Masks",
+        "sRGB": false,
         "channels": {
           "R": "AO",
           "G": "Roughness",
@@ -30,8 +31,8 @@
       {
         "mode_name": "NH",
         "custom_suffix": "",
-        "texture_compression": "",
-        "sRGB": "false",
+        "texture_compression": "Masks",
+        "sRGB": false,
         "channels": {
           "R": "Normal.R",
           "G": "Normal.G",

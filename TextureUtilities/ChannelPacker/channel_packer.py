@@ -9,25 +9,24 @@ from collections import defaultdict
 from typing import Dict, List, Optional, Set, Tuple, Union, cast
 
 
-from ..image_lib import (
-    ImageObj, close_image, get_bands, get_channel, get_mode, get_size,
-    merge_channels, new_gray, open_image, resize, to_grayscale)
+from ...common_utils import log
 
-from ..texture_classes import (MapNameAndRes, TextureMapData)
+from ..image_lib import (ImageObj, close_image, get_bands, get_channel, get_mode, get_size,
+    merge_channels, new_gray, open_image, resize, is_grayscale, is_rgb_grayscale, to_grayscale)
 
-from ..texture_settings import (ALLOWED_FILE_TYPES, BACKUP_FOLDER_NAME, DEST_FOLDER_NAME, SHOW_DETAILS)
+from ..texture_classes import (MapNameAndRes, TextureMapData, TextureTypeConfig)
+
+from ..texture_settings import (ALLOWED_FILE_TYPES, BACKUP_FOLDER_NAME, DEST_FOLDER_NAME, SHOW_DETAILS, TEXTURE_CONFIG)
 
 from ..texture_utils import (check_texture_suffix_mismatch, close_image_files, detect_size_suffix,
-    group_paths_by_folder, is_power_of_two, log, make_output_dirs, match_suffixes, resolution_to_suffix, validate_safe_folder_name)
+    group_paths_by_folder, is_power_of_two, make_output_dirs, match_suffixes, resolution_to_suffix, validate_safe_folder_name)
 
 from .classes import (
-    ChannelMapping, PackingMode, SetEntry, TextureMapCollection,
-    TextureNameInfo, TextureSet, ValidModeEntry)
+    ChannelMapping, PackingMode, SetEntry, TextureMapCollection, TextureNameInfo, TextureSet, ValidModeEntry)
 
-from .settings import (TextureTypeConfig, PACKING_MODES, RESIZE_STRATEGY, TEXTURE_CONFIG)
+from .settings import (PACKING_MODES, RESIZE_STRATEGY)
 
-from .io_backend import (CPContext, validate_export_ext_ctx,
-    split_by_parent, list_initial_files, prepare_workspace, save_image, move_used_map, cleanup)
+from .io_backend import (ConvertedEntry, CPContext, validate_export_ext_ctx, split_by_parent, list_initial_files, prepare_workspace, save_image, move_used_map, cleanup)
 
 
 # Basic data structure bundling textures and their metadata into a texture set:
@@ -56,6 +55,7 @@ from .io_backend import (CPContext, validate_export_ext_ctx,
 
 
 #                                           === Pipeline ===
+
 
 def channel_packer(input_folder: Optional[str] = None) -> None:
 # Prepares texture sets for generating final channel-packed texture.
@@ -106,6 +106,11 @@ def channel_packer(input_folder: Optional[str] = None) -> None:
 # Filtering modes to those with at least two required maps, then choosing the target resolution and logging any mismatches.
         for tex_set_name, tex_set in raw_textures.items():
             original_tex_set_name: str = tex_set.tex_set_name
+
+            name_for_log = f"{log_prefix}{original_tex_set_name}" if log_prefix else original_tex_set_name
+            log(f"\nProcessing: {name_for_log}", "info")
+            # Prints info.
+
             available_maps: TextureMapCollection = tex_set.available_maps
 
             valid_modes_with_maps: List[ValidModeEntry] = _get_valid_modes_for_set(original_tex_set_name, available_maps, valid_packing_modes)
@@ -124,9 +129,6 @@ def channel_packer(input_folder: Optional[str] = None) -> None:
                 continue
             # Skips if there are less than 2 necessary maps for a given packing mode; the flag is used in logs.
 
-            name_for_log = f"{log_prefix}{original_tex_set_name}" if log_prefix else original_tex_set_name
-            log(f"\nProcessing: {name_for_log}", "info")
-            # Prints info.
 
             invalid_mode_names_for_set: Set[str] = set() # Collects modes that do not meet any criteria, used to create final valid_modes_with_maps.
             invalid_dims_for_summary: Dict[str, Tuple[int, int]] = {}  # Invalid dimensions for textures that are not 2^n
@@ -193,6 +195,17 @@ def channel_packer(input_folder: Optional[str] = None) -> None:
                 warning_type="suffix",
             )
             # Prints warning if size suffixes in the file name (if present) do not match the actual texture size
+
+
+            key_lower: str = original_tex_set_name.lower()
+            exr_types_list: List[str] = sorted({e.map_type for e in ctx.converted_from_raw.values() if e.set_key == key_lower and e.map_type is not None})
+
+            _print_warnings(
+                items=exr_types_list,
+                displayed_flag=False,
+                warning_type="exr_source",
+            )
+            # Logs files that were converted from float to 8bit int.
 
 
             for entry in valid_modes_with_maps:
@@ -305,12 +318,13 @@ def _validate_config(resize_strategy: str, ctx: Optional[CPContext] = None) -> N
     custom: str = validate_safe_folder_name(DEST_FOLDER_NAME)
     # Checks if folder names don't contain unsupported characters.
 
-    validate_export_ext_ctx(ctx) # Validates the selected output extension and stores it in context
-    export_ext: str = ctx.export_ext.lower()
 
+    validate_export_ext_ctx(ctx)
+    export_ext: str = ctx.export_ext.lower()
     if not export_ext:
         log("Aborted: could not resolve output extension.", "error")
         raise SystemExit(1)
+
     # Validates and stores chosen export extension.
 
     uses_alpha = any((mode.get("channels") or {}).get("A") for mode in PACKING_MODES)
@@ -426,17 +440,13 @@ def _validate_packing_modes() -> List[PackingMode]:
                         if SHOW_DETAILS:
                             log(
                                 f"PACKING_MODE '{mode_name}' channel '{ch}': "
-                                f"'{val}' is RGB without channel, defaulting to '{fixed_val}'.",
-                                "info"
-                            )
+                                f"'{val}' is RGB without channel, defaulting to '{fixed_val}'.","info")
                             # Prints info.
                     elif ch == "A":
                         log(
                             f"PACKING_MODE '{mode_name}' channel '{ch}' is assigned full RGB map '{val}' "
                             f"without explicit channel; Alpha must reference a single channel (e.g. '{val}.r') "
-                            f"or a grayscale map, or be empty.",
-                            "error"
-                        )
+                            f"or a grayscale map, or be empty.","error")
                         sys.exit(1)
                         # Prints info.
                         # Cannot infer which component should map to Alpha; aborts.
@@ -451,8 +461,8 @@ def _validate_packing_modes() -> List[PackingMode]:
                 fixed_val = val
             fixed_channels[ch] = fixed_val
 
-        # Replaces the channels dict with the fixed mapping (e.g., when a grayscale map has a channel suffix); a cast is required due to TypedDict.
-        mode["channels"] = cast(ChannelMapping, fixed_channels) # Variable not typed due to TypedDict > Dict issue
+        # Replaces the channels dict with the fixed mapping (e.g., when a grayscale map has a channel suffix).
+        mode["channels"] = cast(ChannelMapping, fixed_channels)
         valid_modes.append(mode)
     return valid_modes
 
@@ -577,7 +587,6 @@ def _preselect_required_textures(valid_packing_modes: List["PackingMode"], ctx: 
 
 
 # Separating non-qualifying and qualifying sets:
-
 # Collecting required maps for qualifying sets:
     available_required_maps_per_set: Dict[str, Set[str]] = {} # Stores available texture types required for packing modes per texture set.
     skipped_sets: Set[str] = set()
@@ -594,16 +603,13 @@ def _preselect_required_textures(valid_packing_modes: List["PackingMode"], ctx: 
         qualifies: bool = False
 
         for mode in valid_packing_modes:
-            channels = (mode.get("channels", {}) or {})
-            required_tex_types: Set[str] = set()
-            for v in channels.values():
-                if not v:
-                    continue
-                required_tex_types.add(_strip_channel_specifier(v).lower())  # Removes e.g., "_R" channel specifier for RGB maps, to see the general map type needed.
-            if len(available_tex_types & required_tex_types) >= 2:
+            required = _required_bases_for_mode(mode)
+            present = {b for b in required if b in available_tex_types}
+            if (len(required) <= 2 and present == required) or (len(required) > 2 and len(present) >= 2):
                 qualifies = True
-                available_required_maps.update(available_tex_types & required_tex_types)
-        # Let's pass the set if it has at least two of this mode’s required maps.
+                available_required_maps.update(present)
+
+        # Let's pass the set if it has at least two of this mode’s unique required maps.
 
         if qualifies: #
             available_required_maps_per_set[texture_id] = available_required_maps
@@ -648,6 +654,28 @@ def _preselect_required_textures(valid_packing_modes: List["PackingMode"], ctx: 
     # Returns skipped sets for logging.
 
 
+def _required_bases_for_mode(mode: "PackingMode") -> set[str]:
+# Converts mapped texture types from dict into a set of required texture types.
+
+    ch = (mode.get("channels") or {})
+    return {_strip_channel_specifier(v).lower() for v in ch.values() if v}
+
+
+def _present_base_types_for_mode(available_maps: "TextureMapCollection", mode: "PackingMode") -> set[str]:
+# Determines how many texture maps types mapped for channel pack are available.
+
+    channels = (mode.get("channels") or {})
+    bases: set[str] = set()
+    for comp in ("R", "G", "B", "A"):
+        v = channels.get(comp)
+        if not v:
+            continue
+        base = _strip_channel_specifier(v).lower()
+        if base in available_maps:
+            bases.add(base)
+    return bases
+
+
 def _build_texture_sets(input_folder: str, initial_files: List[str], *, required_types_by_set: Optional[Dict[str, Set[str]]] = None, ctx: Optional[CPContext] = None) -> Dict[str, TextureSet]:
 # Iterates over all given files, extracts texture set name, and collects all its map data.
 
@@ -661,6 +689,7 @@ def _build_texture_sets(input_folder: str, initial_files: List[str], *, required
         tex_set_name, tex_type, declared_suffix, original_filename = info
 
         key: str = tex_set_name.lower()
+
 
         if required_types_by_set is not None:
             allowed = required_types_by_set.get(key, set())
@@ -683,6 +712,22 @@ def _build_texture_sets(input_folder: str, initial_files: List[str], *, required
 
         raw_textures[key].available_maps[tex_type] = texture_data
         # Creates a TextureMapData instance extracted by function and add it to the appropriate map type list.
+
+        if ctx is not None and getattr(ctx, "converted_from_raw", None):
+            norm_full: str = os.path.abspath(full_path).replace("\\", "/")
+            entry: ConvertedEntry = ctx.converted_from_raw.get(norm_full)
+            if entry is not None:
+                entry.set_key = key
+
+                canonical_type: str = tex_type
+                for original_key in TEXTURE_CONFIG.keys():
+                    if original_key.lower() == tex_type.lower():
+                        canonical_type = original_key
+                        break
+
+                entry.map_type = canonical_type
+        # Collects map types successfully converted from 32bit float.
+
 
     raw_textures = dict(sorted(raw_textures.items(), key=lambda kv: kv[0]))
     return raw_textures
@@ -728,23 +773,25 @@ def _extract_mode_name(packing_mode: PackingMode) -> str:
 def _get_available_maps_for_packing(mode: PackingMode, available_maps: TextureMapCollection) -> TextureMapCollection:
     # Returns a dict of available map types used in each PackingMode.
     # If a set contains the same map type in multiple resolutions, picks the highest for packing.
-    required_maps = mode.get("channels", {}) # Retrieves the mapping of texture types to RGBA channels from PACKING_MODES; a cast is required due to TypedDict.
+    channels = (mode.get("channels") or {})
     result: TextureMapCollection = {}
+    seen: set[str] = set()
 
-    for tex_type in set(required_maps.values()):
-        if not tex_type:
+    for ch in ("R", "G", "B", "A"):
+        channel = channels.get(ch)
+        if not channel:
             continue
-
-        base_type = _strip_channel_specifier(tex_type)  # Gets the base map name (removing the channel suffix like "_R").
-
-        if base_type in available_maps:
-            maps_list = available_maps[base_type]
-            if isinstance(maps_list, list):
-                best = max(maps_list, key=lambda t: t.resolution[0] * t.resolution[1])
+        base = _strip_channel_specifier(channel)  # Lowercase, removes e.g., "_R" for RGB maps.
+        if base in seen:
+            continue
+        if base in available_maps:
+            maps_entry = available_maps[base]
+            if isinstance(maps_entry, list):
+                best = max(maps_entry, key=lambda t: (t.resolution or (0,0))[0] * (t.resolution or (0,0))[1])
             else:
-                best = maps_list
-            result[base_type] = best
-        # Picks the largest resolution for the same map type.
+                best = maps_entry
+            result[base] = best # Picks the largest resolution for the same map type.
+            seen.add(base)
     return result
 
     # e.g., in ARM packaging from:   Albedo : [D], Roughness : [D], Metallic : [D], AO : [D]
@@ -755,11 +802,20 @@ def _get_valid_modes_for_set(original_name: str, available_maps: TextureMapColle
 # Adds only the texture maps used to a packing mode that expects them and also adds its case-sensitive texture set name for easier identification of a processed set during generation of the channel-packed image.
 # Requires at least 2 maps for a packing mode.
     valid_modes_with_maps: List[ValidModeEntry] = []
-    for mode in valid_packing_modes:
-        maps_for_mode: TextureMapCollection = _get_available_maps_for_packing(mode, available_maps)
+    available_types = set(available_maps.keys())
 
+    for mode in valid_packing_modes:
+        required = _required_bases_for_mode(mode)
+        present = required & available_types
+
+
+        if (len(required) <= 2 and present != required) or (len(required) > 2 and len(present) < 2):
+            continue
+
+        maps_for_mode: TextureMapCollection = _get_available_maps_for_packing(mode, available_maps)
         if len(maps_for_mode) < 2:
             continue
+
         valid_modes_with_maps.append(
             ValidModeEntry(
                 tex_set_name=original_name,
@@ -856,10 +912,9 @@ def _list_missing_maps_for_channel_mapping(channel_mapping: ChannelMapping, maps
     return missing_maps
 
 
-def _print_warnings(
-    items: Union[List[MapNameAndRes], List[str]],
+def _print_warnings( items: Union[List[MapNameAndRes], List[str]],
     displayed_flag: bool,
-    warning_type: str, # "resolution" | "suffix" | "missing_maps"
+    warning_type: str, # "resolution" | "suffix" | "missing_maps" | "exr_source"
     *,
     target_resolution: Optional[Tuple[int, int]] = None, # only for "resolution"
     mode_name: Optional[str] = None, # Only for "missing_maps"
@@ -869,15 +924,18 @@ def _print_warnings(
         return displayed_flag
 
     if warning_type == "resolution":
-        simplified = "Warning: Texture set resolution mismatch."
-        detailed   = f"Warning: Texture set resolution mismatch:\n   Resize strategy set to '{RESIZE_STRATEGY}'"
+        simplified = "Texture set resolution mismatch."
+        detailed   = f"Texture set resolution mismatch:\n   Resize strategy set to '{RESIZE_STRATEGY}'"
     elif warning_type == "suffix":
-        simplified = "Warning: Suffix resolution mismatch."
-        detailed   = "Warning: Suffix resolution mismatch:"
+        simplified = "Suffix resolution mismatch."
+        detailed   = "Suffix resolution mismatch:"
     elif warning_type == "missing_maps":
         mn = mode_name or ""
-        simplified = f"Warning: Missing some texture maps for '{mn}'."
-        detailed   = f"Warning: Missing texture maps for '{mn}':"
+        simplified = f"Missing some texture maps for '{mn}'."
+        detailed   = f"Missing texture map for '{mn}':"
+    elif warning_type == "exr_source":
+        simplified = "Float image source detected."
+        detailed = "Float image source detected:"
     else:
         simplified = detailed = "Warning."
     # Chooses a warning type to print.
@@ -906,9 +964,13 @@ def _print_warnings(
             for miss in items:
                 for original_key in TEXTURE_CONFIG.keys():
                     if original_key.lower() == miss:
-                        log(f"Generated: {original_key}", "info")
+                        log(f"Default value: {original_key}", "info")
                         # Prints info.
                         break
+        elif warning_type == "exr_source":
+            for t in items:  # type: ignore[assignment]
+                log(f"Converted: {t}", "info")
+                # Prints info.
 
     # Prints warnings for each affected file if SHOW_DETAILS was set to true.
     return displayed_flag
@@ -919,26 +981,51 @@ def _print_warnings(
 #                                              === Generation ===
 
 def _extract_channel(image: Optional[ImageObj], tex_map_type_name: str) -> Optional[ImageObj]:
-# Extracts the channel specified by the packing mode from an RGB/RGBA image. e.g., B: Normal_R. > Normal red channel
+# Extracts the channel specified by the packing mode from an RGB/RGBA image. E.g., B: Normal_R. > Normal red channel
     if image is None:
         return None
 
-    match = re.search(r'[._]([rgba])$', tex_map_type_name, re.IGNORECASE)
-    requested_channel: str = match.group(1).upper() if match else ""
-    # Derives the texture type name from PACKING_MODE channel values (e.g., Normal_R).
+# Preparing grayscale:
+    mode: str = get_mode(image)
+    if is_grayscale(image):
+        return to_grayscale(image)
+    # If the image type is 8bit grayscale, returns it as-is, otherwise converts the grayscale from 16 to 8 bit.
 
-    if get_mode(image) == "L":
-        return image
-    # If the image is grayscale, returns it as-is.
+    if mode in ("RGB", "RGBA"):
+# Preparing RGB images with a specified channel:
+        match = re.search(r'[._]([rgba])$', tex_map_type_name, re.IGNORECASE)
+        requested_channel: str = match.group(1).upper() if match else ""
+        # Derives the texture type name from PACKING_MODE channel values (e.g., Normal_R).
+
+        bands = get_bands(image)
+        if requested_channel and requested_channel in bands:
+            return get_channel(image, requested_channel)
+        # If the image is RGB/RGBA and the requested channel is valid, extracts that channel.
 
 
-    if requested_channel and requested_channel in get_bands(image):
-        return get_channel(image, requested_channel)
-    # If the image is RGB/RGBA and the requested channel is valid, extracts that channel.
+# Preparing grayscale images saved as RGB:
+        base: str = tex_map_type_name.split(".", 1)[0].lower()
+        is_gray_type: bool = False
+        for key, cfg in TEXTURE_CONFIG.items():
+            if key.lower() == base:
+                is_gray_type = (cfg.get("default", ("G", 0))[0] or "").upper() == "G"
+                break
+        # Checks if the set map type should be single channel data only, e.g., "AO".
 
 
-    return to_grayscale(image)
-    # Otherwise, converts the image to grayscale as a fallback.
+        if is_gray_type and mode in ("RGB", "RGBA") and "R" in bands and "G" in bands:
+            try:
+                if is_rgb_grayscale(image):
+                    return get_channel(image, "R")
+            except Exception:
+                pass
+        #  Checks if RGB texture is just a grayscale image saved as RGB instead of L.
+
+        return to_grayscale(image)
+        # Otherwise, converts the image to grayscale as a fallback.
+    else:
+        log(f"Unsupported image mode '{mode}' for '{tex_map_type_name}'.", "error")
+        return None
 
 
 def _generate_channel_packed_texture(
@@ -976,7 +1063,7 @@ def _generate_channel_packed_texture(
                 im = open_image(tex_data.path)
                 if get_size(im) != base_size:
                     im_resized = resize(im, base_size)
-                    close_image(im) #  # Explicitly closes the original image after resizing; the wrapper has no context manager, otherwise the file handle stays open.
+                    close_image(im)
                     im = im_resized
                 loaded_images[tex_name] = im # Maps image data to corresponding a texture name.
             except (OSError, ValueError) as e:
@@ -1018,7 +1105,8 @@ def _generate_channel_packed_texture(
             channel_img: ImageObj = _extract_channel(im, map_name) # Passes a chosen texture map if grayscale, if RGB, then extracts specific channel, derived from .R .G .B in its name.
             channels.append(channel_img)
 
-# Generating the final image:
+
+        # Generating the final image:
         packed = merge_channels(generated_file_type, channels)
 
 
@@ -1055,7 +1143,7 @@ def _summarize_mode_results(
     valid_modes_with_maps: List[ValidModeEntry],
     target_resolution: Dict[str, Tuple[int, int]],
     *,
-    invalid_modes: Optional[Set[str]] = None, # Modes that textures that had invalid textures.
+    invalid_modes: Optional[Set[str]] = None,
     invalid_mode_dims: Optional[Dict[str, Tuple[int, int]]] = None,
 ctx: Optional[CPContext] = None,
     log_prefix: str = ""
@@ -1072,14 +1160,14 @@ ctx: Optional[CPContext] = None,
         if mode_name in invalid:
             w, h = dims.get(mode_name, (0, 0))
             if (w, h) == (0, 0):
-                log(f"{log_prefix} Error: '{mode_name}' Corrupted files missing resolution info - skipping mode.", "error")
+                log(f"{log_prefix} '{mode_name}' Corrupted files missing resolution info - skipping mode.", "error")
                 # Prints error.
 
             else:
                 if SHOW_DETAILS:
-                    log(f"{log_prefix} Error: '{mode_name}' Invalid resolution ({w}x{h}) - skipping mode.", "error")
+                    log(f"{log_prefix} '{mode_name}' Invalid resolution ({w}x{h}) - skipping mode.", "error")
                 else:
-                    log(f"{log_prefix} Error: '{mode_name}' Invalid resolution - skipping mode.", "error")
+                    log(f"{log_prefix} '{mode_name}' Invalid resolution - skipping mode.", "error")
                 # Prints error.
             continue
 
@@ -1100,7 +1188,7 @@ ctx: Optional[CPContext] = None,
                     #  Prints completed.
         else:
             if SHOW_DETAILS:
-                log(f"{log_prefix} Skipped: {original_tex_set_name}_{mode_name} (less than 2 maps for a mode)", "skip")
+                log(f"{log_prefix} Skipped: '{mode_name}' for set '{original_tex_set_name}' (needs at least required maps).","skip")
             else:
-                log(f"{log_prefix} Skipped: {original_tex_set_name}_{mode_name}", "skip")
+                log(f"{log_prefix} Skipped: '{mode_name}' for set '{original_tex_set_name}'", "skip")
                 # Prints skipped.

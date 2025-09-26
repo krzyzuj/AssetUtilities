@@ -1,40 +1,23 @@
 
 """ Shared texture utilities used across all texture-processing modules. """
 
+
 import os
 import re
 from collections import defaultdict
-from typing import Dict, Iterable, List, Optional, Set, Tuple
+from typing import (Dict, Iterable, List, Optional, Set, Tuple)
 
 import unreal
 
+from ..common_utils import log
 
 from .image_lib import close_image
+from .exr_converter import (check_exr_libraries, exr_to_image)
 
 from .texture_classes import (MapNameAndRes, TextureMapData)
-from .texture_settings import (ALLOWED_FILE_TYPES, BACKUP_FOLDER_NAME, DEST_FOLDER_NAME, COMPRESSION_TYPES, FILE_TYPE, SIZE_SUFFIXES, UNREAL_TEMP_FOLDER, CompressionSettings)
+from .texture_settings import (ALLOWED_FILE_TYPES, BACKUP_FOLDER_NAME, DEST_FOLDER_NAME, COMPRESSION_TYPES, FILE_TYPE, SIZE_SUFFIXES, SHOW_DETAILS, UNREAL_TEMP_FOLDER, CompressionSettings)
 
 
-LOG_TYPES = ["info", "warn", "error", "skip", "complete"] # Defines log types; the backend handles printing for the Windows CLI and Unreal Engine.
-
-def log(msg: str, kind: str = "info") -> None:
-# Maps different log types to the Unreal log system.
-
-    if msg == "":
-        unreal.log("") # Print an empty line as a separation in the log.
-        return
-    if kind == "info":
-        unreal.log(f"{msg}")
-    elif kind == "warn":
-        unreal.log_warning(msg)
-    elif kind == "error":
-        unreal.log_error(msg)
-    elif kind == "skip":
-        unreal.log_error(f"{msg}")
-    elif kind == "complete":
-        unreal.log(f"{msg}")
-    else:
-        unreal.log(msg)
 
 
 def check_texture_suffix_mismatch(tex: TextureMapData) -> Optional[MapNameAndRes]:
@@ -66,17 +49,16 @@ def close_image_files(images: Iterable[Optional[object]]) -> None:
             pass
 
 
-def detect_size_suffix(name: str) -> str:
+def detect_size_suffix(name: str) -> Optional[str]:
     # Detects size suffixes present in the map name, e.g., "2K"
 
     tokens: List[str] = sorted([s.lower() for s in SIZE_SUFFIXES if s], key=len, reverse=True)
     # Normalizes tokens to lowercase and sorts by reverse length to avoid shorter tokens matching before longer ones.
     if not tokens:
         return ""
-    pattern = r"(?:[\._\-])(" + "|".join(map(re.escape, tokens)) + r")$"
+    m: Optional[re.Match[str]] = re.search(r'(?:^|[_\-])(?P<size>(?:16k|8k|4k|2k|1k|\d{3,5}))(?:-[a-z0-9]+)?$', name, re.IGNORECASE)
     # Tries to match suffix variances to the map name
-    m: Optional[re.Match[str]] = re.search(pattern, name.lower())
-    return m.group(1) if m else ""
+    return (m.group('size').lower() if m else None)
     # Returns the captured token e.g., '2k' if able to find one
 
 
@@ -102,6 +84,78 @@ def ensure_asset_saved(pkg_path: str, *, auto_save: bool) -> bool:
     return False
 
 
+def export_temp_file(asset: "unreal.Texture2D", out_dir: str, asset_name: str, pkg_path: str, ext:str = "png", *, exr_srgb_curve: bool = True) -> Tuple[Optional[str], bool]:
+
+    was_float: bool = False
+
+# default export:
+    ext_norm: str = "." + ext.lstrip(".") # In case the extension is already set with the dot.
+    os.makedirs(out_dir, exist_ok=True)
+    final_path = os.path.join(out_dir, f"{asset_name}{ext_norm}")
+
+    default_image = unreal.AssetExportTask()
+    default_image.object = asset
+    default_image.filename = final_path
+    default_image.automated = True
+    default_image.prompt = False
+    default_image.replace_identical = True
+
+    image_ok: bool = False
+    try:
+        image_ok = unreal.Exporter.run_asset_export_task(default_image)
+    except Exception as e:
+        image_ok = False
+        if SHOW_DETAILS:
+            log(f"{ext_norm} export raised exception for '{pkg_path}': {e}", "warn")
+
+    if image_ok and os.path.isfile(final_path):
+        return os.path.abspath(final_path).replace("\\", "/"), was_float
+
+
+# .exr fallback export for 32bit textures:
+    use_exr: bool = check_exr_libraries()
+    if use_exr:
+        log(f"Exporting the '{asset_name}' as .exr", "info")
+
+        final_exr = os.path.join(out_dir, f"{asset_name}.exr")
+        exr_image = unreal.AssetExportTask()
+        exr_image.object = asset
+        exr_image.filename = final_exr
+        exr_image.automated = True
+        exr_image.prompt = False
+        exr_image.replace_identical = True
+
+        exr_ok: bool = False
+        try:
+            exr_ok = unreal.Exporter.run_asset_export_task(exr_image)
+        except Exception as e:
+            exr_ok = False
+            if SHOW_DETAILS:
+                log(f"EXR export raised exception for '{pkg_path}': {e}", "error")
+
+        if (not exr_ok) or (not os.path.isfile(final_exr)) or (os.path.getsize(final_exr) == 0):
+            if SHOW_DETAILS:
+                log(f"EXR export failed or missing file: {final_exr}", "error")
+            return None, was_float
+
+        exr_path_abs: str = os.path.abspath(final_exr).replace("\\", "/")
+        final_path: str = exr_to_image(exr_path_abs, ext=ext, srgb_transform=exr_srgb_curve)
+
+        if final_path:
+            was_float = True
+            return final_path, was_float
+
+        if SHOW_DETAILS:
+            log(f"EXR exported but .exr to '{ext}' conversion failed for '{pkg_path}'", "error")
+        return None, was_float
+
+    else:
+        if SHOW_DETAILS:
+            log(f"Skipping .exr file: '{asset_name}' - (OpenEXR/Numpy unavailable).", "warn")
+        return None, was_float
+
+
+
 def get_selected_assets(*, recursive: bool = False) -> List[str]:
 # Sorts out the selection and run function to collect the asset's package paths accordingly.
 # If folders are present in the selection, then it lists assets in folders only.
@@ -123,7 +177,7 @@ def get_selected_assets(*, recursive: bool = False) -> List[str]:
 
 def get_tex_compression_settings(input_setting_name: str) -> Tuple[unreal.TextureCompressionSettings, bool, bool]:
 # Validates the input texture compression settings from the config.
-# Returns Unreal's Texture Compression Setting, its's sRGB setting bool and flags whether input was correct or uses the default one.
+# Returns Unreal's Texture Compression Setting, its sRGB setting bool and flags whether input was correct or uses the default one.
 
     input_name = (input_setting_name or "").strip()
 
@@ -262,7 +316,6 @@ def list_selected_assets() -> List[str]:
 
 def make_output_dirs(base_path: str) -> tuple[str, Optional[str]]:
 # Returns the output and optional backup directories for a given base path:
-# ctx used only in the Unreal version.
 
     base_path = os.path.abspath(base_path or ".")
     out_name = (DEST_FOLDER_NAME or "").strip()
@@ -316,11 +369,10 @@ def normalize_cb_folder(folder: str) -> str:
 
 def object_to_package_path(obj_path: str) -> str:
 # E.g., Root/A/B/Example.Example > Root/A/B/Example
+
     if not isinstance(obj_path, str):
-        return obj_path
-
+        return ""
     pkg_path = obj_path.split(":", 1)[0] # If exists, proceeds to delete the subobject from the path
-
     return pkg_path.split(".", 1)[0]
 
 
@@ -361,7 +413,7 @@ def resolve_work_dir() -> Tuple[str, bool]:
 
 
 def resolution_to_suffix(size: Tuple[int, int]) -> str:
-    # Tries to match the actual image size to a size suffix.
+# Tries to match the actual image size to a size suffix.
 
     width = max(size)
     for threshold, label in [
@@ -375,6 +427,7 @@ def resolution_to_suffix(size: Tuple[int, int]) -> str:
 
 def validate_export_ext() -> str:
 # Validates the selected output extension set in config.
+# Returns lowercase ext without the "."
 
     allowed_ext: set[str] = set(ALLOWED_FILE_TYPES)
     aliases: Dict[str, str] = {"jpeg": "jpg"}

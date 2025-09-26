@@ -5,10 +5,10 @@ Global:
 
 
 Generators:
-[mandatory]	         file_type:  file ext          -  file type extension for temporary texture files created outside Unreal
 [optional]	 unreal_temp_folder:  folder name      -  destination folder for exporting source textures for channel packing;   if empty: creates TempFolder in the project /Game/ directory
 [optional]       dest_folder_name:  folder name    -  if set, saves generated textures into this subfolder [Content Browser]
 [optional]       backup_folder_name:  folder name  -  if set, moves files used for texture generation into this folder after packing is finished [Content Browser]
+[optional]        exr_srgb_curve:   true/false     -  if set, applies sRGB gamma curve when converting float texture2D, mimicking Photoshop behavior, when converting with gamma 1.0/exposure 0.0;  if empty: true
 [optional]	       delete_used:  true/false        -  deletes used source files after packing;  if empty: false
 
 
@@ -38,6 +38,8 @@ supported map names:
 - Translucency
 - Specular
 - Normal
+- BentNormal
+- Bump
 - Albedo
 - SSS
 - Emissive
