@@ -21,7 +21,7 @@ def run(target_module: str, func_name: str, inject_ctx: Optional[str] = None, de
     except ModuleNotFoundError as e:
         unreal.log_error(f"[dispatcher] Module not found: {target_module}")
         return
-    fn = getattr(module, func_name)
+    function = getattr(module, func_name)
 
 
 
@@ -40,7 +40,7 @@ def run(target_module: str, func_name: str, inject_ctx: Optional[str] = None, de
             try:
                 if debug: unreal.log(f"[dispatcher] Calling {target_module}.{func_name} with ctx={type(ctx).__name__}")
 
-                fn(ctx=ctx) # Call with the context.
+                function(ctx=ctx) # Call with the context.
 
                 if debug: unreal.log(f"[dispatcher] {func_name} finished OK")
                 return
@@ -55,7 +55,7 @@ def run(target_module: str, func_name: str, inject_ctx: Optional[str] = None, de
 # If no context is provided, call the function without injection:
         if debug: unreal.log(f"[dispatcher] calling {target_module}.{func_name} ()")
 
-        fn() # Call without the context.
+        function() # Call without the context.
 
         if debug: unreal.log(f"[dispatcher] {func_name} finished OK")
 
@@ -81,9 +81,9 @@ def _build_ctx(inject_ctx: str, target_module: str, func_name: str, debug: bool 
 
 # Importing the context module and determining the factory name:
     mod_name, explicit_factory = _split_module_and_factory(inject_ctx)
-    m = importlib.import_module(mod_name)
+    module = importlib.import_module(mod_name)
     factory_name = explicit_factory or DEFAULT_FACTORY_NAME
-    factory: str = getattr(m, factory_name, None)
+    factory: str = getattr(module, factory_name, None)
 
 
 
@@ -94,8 +94,8 @@ def _build_ctx(inject_ctx: str, target_module: str, func_name: str, debug: bool 
         return None
 
     try:
-        sig  = inspect.signature(factory)
-        params = len(sig.parameters)
+        signature  = inspect.signature(factory)
+        params = len(signature.parameters)
     # Gets how many parameters the factory function declares.
 
 

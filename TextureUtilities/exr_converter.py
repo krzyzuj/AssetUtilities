@@ -30,24 +30,24 @@ def check_exr_libraries() -> bool:
         if os.name == "nt":
             kwargs["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", 0) # Hides the CLI windows for the library check.
 
-        cp: subprocess.CompletedProcess[str] = subprocess.run([pyexe, "-c", code], **kwargs)
-        return (cp.returncode == 0) and ((cp.stdout or "").strip() == "1")
+        completed_process: subprocess.CompletedProcess[str] = subprocess.run([pyexe, "-c", code], **kwargs)
+        return (completed_process.returncode == 0) and ((completed_process.stdout or "").strip() == "1")
         # Subprocess
 
     except Exception:
         return False
 
 
-def exr_to_image(src_exr: str, *, ext: str = "png", srgb_transform: bool = True):
+def exr_to_image(source_exr: str, *, output_extension: str = "png", srgb_transform: bool = True):
 # Converts a .exr file to a bitmap by running Unreal Engine’s embedded Python in a child process, avoiding DLL/import conflicts that can occur when run inside the Engine.
 # Returns an absolute path to the converted image.
 
 # Creating the directory:
-    ext: str = "." + ext
-    src_path: tuple[str, str] = os.path.splitext(src_exr)
-    base, _ = src_path
-    fin_path: str = base + ext
-    os.makedirs(os.path.dirname(os.path.abspath(fin_path)) or ".", exist_ok=True)
+    output_extension: str = "." + output_extension
+    source_path: tuple[str, str] = os.path.splitext(source_exr)
+    source_filename, _ = source_path
+    target_path: str = source_filename + output_extension
+    os.makedirs(os.path.dirname(os.path.abspath(target_path)) or ".", exist_ok=True)
 
 # Launching the subprocess:
     pyexe: str = _ue_python_exe()
@@ -59,9 +59,9 @@ def exr_to_image(src_exr: str, *, ext: str = "png", srgb_transform: bool = True)
     args: list[str] = [
         pyexe,
         "-c", "import sys; exec(sys.stdin.read())",  # -c
-        src_exr,
-        fin_path,
-        ext.lstrip("."),
+        source_exr,
+        target_path,
+        output_extension.lstrip("."),
         "1" if srgb_transform else "0",
     ]
 
@@ -82,48 +82,48 @@ def exr_to_image(src_exr: str, *, ext: str = "png", srgb_transform: bool = True)
         subprocess.run(args, **kwargs)
 
 
-    except subprocess.CalledProcessError as e:
-        err: str = (e.stderr or e.stdout or "").strip()
-        if SHOW_DETAILS and err:
-            log(f"Exr to image subprocess failed {e.returncode} for '{src_exr}': {err}", "error")
+    except subprocess.CalledProcessError as error:
+        process_output_error: str = (error.stderr or error.stdout or "").strip()
+        if SHOW_DETAILS and process_output_error:
+            log(f"Exr to image subprocess failed {error.returncode} for '{source_exr}': {process_output_error}", "error")
         return None
 
-    except Exception as e:
+    except Exception as error:
         if SHOW_DETAILS:
-            log(f"Exr to image subprocess exception for '{src_exr}': {e}", "error")
+            log(f"Exr to image subprocess exception for '{source_exr}': {error}", "error")
         return None
     # Error logs.
 
-    if not os.path.isfile(fin_path):
+    if not os.path.isfile(target_path):
         if SHOW_DETAILS:
-            log(f"Exr to image subprocess failed: output not found (expected '{fin_path}')", "error")
+            log(f"Exr to image subprocess failed: output not found (expected '{target_path}')", "error")
         return None
     # Checks created image.
 
     try:
-        os.remove(src_exr)
-    except Exception as e:
+        os.remove(source_exr)
+    except Exception as error:
         if SHOW_DETAILS:
-            log(f"Exr to image subprocess: couldn't delete source '{src_exr}': {e}", "warn")
+            log(f"Exr to image subprocess: couldn't delete source '{source_exr}': {error}", "warn")
     # Deletes the original .exr file.
-    return os.path.abspath(fin_path).replace("\\", "/")
+    return os.path.abspath(target_path).replace("\\", "/")
 
 
-def _is_executable(path: str) -> bool:
+def _is_executable(exe_path: str) -> bool:
 # Returns True if a path points to an existing executable file.
 
-    return bool(path) and os.path.isfile(path) and os.access(path, os.X_OK)
+    return bool(exe_path) and os.path.isfile(exe_path) and os.access(exe_path, os.X_OK)
 
 
 @lru_cache(maxsize=1)
 def _ue_python_exe() -> str:
 # Builds a path to the current Unreal Engine’s embedded Python .exe.
 
-    def get_abs_path(rel: str) -> str:
+    def get_absolute_path(relative_path: str) -> str:
     # Converts engine's interpreter relative path to absolute.
-        return os.path.abspath(os.path.normpath(os.path.join(eng, rel)))
+        return os.path.abspath(os.path.normpath(os.path.join(eng, relative_path)))
 
-    candidates: list[str] = []
+    os_candidates: list[str] = []
     try:
         import unreal
         eng: str = unreal.Paths.engine_dir()
@@ -136,21 +136,21 @@ def _ue_python_exe() -> str:
                 eng = os.path.abspath(os.path.normpath(os.path.join(os.getcwd(), eng)))
 
         if sys.platform.startswith("win"):
-            candidates += [get_abs_path(r"Binaries/ThirdParty/Python3/Win64/python.exe")]
+            os_candidates += [get_absolute_path(r"Binaries/ThirdParty/Python3/Win64/python.exe")]
         elif sys.platform.startswith("linux"):
-            candidates += [get_abs_path("Binaries/ThirdParty/Python3/Linux/bin/python3")]
+            os_candidates += [get_absolute_path("Binaries/ThirdParty/Python3/Linux/bin/python3")]
         elif sys.platform == "darwin":
-            candidates += [get_abs_path("Binaries/ThirdParty/Python3/Mac/bin/python3"), get_abs_path("Binaries/ThirdParty/Python3/Mac/Frameworks/Python.framework/Versions/Current/bin/python3")]
-    except Exception as e:
+            os_candidates += [get_absolute_path("Binaries/ThirdParty/Python3/Mac/bin/python3"), get_absolute_path("Binaries/ThirdParty/Python3/Mac/Frameworks/Python.framework/Versions/Current/bin/python3")]
+    except Exception as error:
         try:
-            log(f" UE python.exe: couldn't query Unreal Engine path ({type(e).__name__}: {e})", "warn")
+            log(f" UE python.exe: couldn't query Unreal Engine path ({type(error).__name__}: {error})", "warn")
         except Exception:
             pass
     # Tries to derive Unreal's Python interpreter path.
 
-    sys_fb: list[str] = [p for p in (shutil.which("python3"), shutil.which("python")) if p]
-    if sys_fb:
-        candidates.extend(sys_fb)
+    system_fallback_interpreters: list[str] = [p for p in (shutil.which("python3"), shutil.which("python")) if p]
+    if system_fallback_interpreters:
+        os_candidates.extend(system_fallback_interpreters)
         try:
             log("Fallback to system's Python interpreter.", "warn")
         except Exception:
@@ -158,11 +158,11 @@ def _ue_python_exe() -> str:
     # Fallback to a system's interpreter.
 
 
-    for c in candidates:
-        if _is_executable(c):
+    for candidate_path in os_candidates:
+        if _is_executable(candidate_path):
             if SHOW_DETAILS:
-                log(f"Using interpreter: {c}", "info")
-            return c
+                log(f"Using interpreter: {candidate_path}", "info")
+            return candidate_path
     # Returns the first executable interpreter.
 
     log("UE python.exe: no Python interpreter found.", "error")
@@ -184,87 +184,89 @@ from PIL import Image
 
 def main() -> None:
 
-    src: str = sys.argv[1]
-    dst: str = sys.argv[2]
-    ext: str = sys.argv[3].lower()
-    do_srgb: bool = (sys.argv[4] == "1")
+    source_exr_path: str = sys.argv[1]
+    output_path: str = sys.argv[2]
+    file_extension: str = sys.argv[3].lower()
+    srgb_tone_map: bool = (sys.argv[4] == "1")
 
     # Preparing the image:
-    file: "OpenEXR.InputFile" = OpenEXR.InputFile(src)
+    file: "OpenEXR.InputFile" = OpenEXR.InputFile(source_exr_path)
     hdr: "dict[str, object]" = file.header()
-    dw: "Imath.Box2i" = hdr["dataWindow"]
-    width: int = dw.max.x - dw.min.x + 1
-    height: int = dw.max.y - dw.min.y + 1
-    float_pix: "Imath.PixelType" = Imath.PixelType(Imath.PixelType.FLOAT)  # Setting pixel data type to float.
+    data_window: "Imath.Box2i" = hdr["dataWindow"]
+    width: int = data_window.max.x - data_window.min.x + 1
+    height: int = data_window.max.y - data_window.min.y + 1
+    float_pixel_data: "Imath.PixelType" = Imath.PixelType(Imath.PixelType.FLOAT)  # Setting pixel data type to float.
 
     channels_list: "list[str]" = list(hdr["channels"].keys())
-    ch_names: "dict[str, str]" = {n.lower(): n for n in channels_list}
+    channel_names: "dict[str, str]" = {channel.lower(): channel for channel in channels_list}
     # Gets names of all available channels.
 
 
-    def linear_to_srgb(x: "np.ndarray") -> "np.ndarray":
+    def linear_to_srgb(linear_values: "np.ndarray") -> "np.ndarray":
         # Applies sRGB gamma.
-        x = np.clip(x, 0.0, 1.0).astype(np.float32)
-        a: float = 0.055
-        return np.where(x <= 0.0031308, x * 12.92, (1 + a) * np.power(x, 1/2.4) - a)
+        linear_values = np.clip(linear_values, 0.0, 1.0).astype(np.float32)
+        srgb_a: float = 0.055
+        return np.where(linear_values <= 0.0031308, linear_values * 12.92, (1 + srgb_a) * np.power(linear_values, 1/2.4) - srgb_a)
     
     
-    def read_channel(n: str) -> "np.ndarray":
+    def read_channel(channel_name: str) -> "np.ndarray":
         # Reads channel as a 32b float and restructures its pixels into 2D array W*H.
-        return np.frombuffer(file.channel(n, float_pix), dtype=np.float32).reshape(height, width)
+        return np.frombuffer(file.channel(channel_name, float_pixel_data), dtype=np.float32).reshape(height, width)
 
 
-    has_rgb: bool = all(k in ch_names for k in ("r", "g", "b"))
-    has_a: bool = ("a" in ch_names)
+    is_rgb: bool = all(channel in channel_names for channel in ("r", "g", "b"))
+    has_alpha: bool = ("a" in channel_names)
 
-    save_kwargs: "dict[str, object]" = {"quality": 95, "optimize": True} if ext == "jpg" else {}
+    save_kwargs: "dict[str, object]" = {"quality": 95, "optimize": True} if file_extension == "jpg" else {}
     # Setting quality for jpeg export.
 
     # Processing the image:
-    if has_rgb:
-        r: "np.ndarray" = read_channel(ch_names["r"])
-        g: "np.ndarray" = read_channel(ch_names["g"])
-        b: "np.ndarray" = read_channel(ch_names["b"])
+    if is_rgb:
+        r: "np.ndarray" = read_channel(channel_names["r"])
+        g: "np.ndarray" = read_channel(channel_names["g"])
+        b: "np.ndarray" = read_channel(channel_names["b"])
         rgb: "np.ndarray" = np.stack([r, g, b], axis=-1)  # Creates a NumPy array combining all RGB channels: HxWx3 (Height, Width, Channels).
 
-        looks_empty_alpha: bool = True
-        a: Optional[np.ndarray] = None
+        almost_empty_alpha: bool = True
+        alpha: Optional[np.ndarray] = None
 
-        if has_a:
-            a = read_channel(ch_names["a"])[..., None]
+        if has_alpha:
+            alpha: NDArray[np.float32] = read_channel(channel_names["a"])[..., None]
             eps: float = 1e-6
-            a_min: float = float(a.min())
-            a_max: float = float(a.max())
-            looks_empty_alpha = a_max <= eps
-            looks_opaque_alpha: bool = a_min >= 1.0 - eps
-            mid_ratio: float = float(((a > eps) & (a < 1.0 - eps)).mean())
-            do_unpremul: bool = (not looks_empty_alpha) and (not looks_opaque_alpha) and (mid_ratio > 0.001)
-            
-            if do_unpremul:
-                denom: "np.ndarray" = np.maximum(a, np.float32(1e-8))
-                rgb = np.divide(rgb, denom, out=rgb, where=denom > 0).astype(np.float32)
+        
+            a_min: float = float(alpha.min())
+            a_max: float = float(alpha.max())
+        
+            is_almost_empty: bool = a_max <= eps
+            is_almost_opaque: bool = a_min >= 1.0 - eps
+        
+            if not is_almost_empty and not is_almost_opaque:
+                partial_alpha_fraction = float(((alpha > eps) & (alpha < 1.0 - eps)).mean())
+                if partial_alpha_fraction > 1e-3:
+                    alpha_denominator: NDArray[np.float32] = np.maximum(alpha, np.float32(1e-8))
+                    rgb = np.divide(rgb, alpha_denominator, out=rgb, where=alpha_denominator > 0).astype(np.float32)
         # Un-premultiplies Alpha if available, and is neither all 0 nor 1.
 
-        if do_srgb:
+        if srgb_tone_map:
             rgb = linear_to_srgb(rgb)
 
         # Converting to 8bit int. Generating and saving the image:
-        if looks_empty_alpha or ext == "jpg":
-            out_u8: "np.ndarray" = np.rint(np.clip(rgb, 0, 1) * 255.0).astype("uint8")
-            Image.fromarray(out_u8, "RGB").save(dst, **save_kwargs)
+        if almost_empty_alpha or file_extension == "jpg":
+            output_image_u8: "np.ndarray" = np.rint(np.clip(rgb, 0, 1) * 255.0).astype("uint8")
+            Image.fromarray(output_image_u8, "RGB").save(output_path, **save_kwargs)
         else:
-            rgba: "np.ndarray" = np.concatenate([np.clip(rgb, 0, 1), np.clip(a, 0.0, 1.0)], axis=-1)  # type: ignore[arg-type]
-            out_u8 = np.rint(rgba * 255.0).astype("uint8")
-            Image.fromarray(out_u8, "RGBA").save(dst, **save_kwargs)
+            rgba: "np.ndarray" = np.concatenate([np.clip(rgb, 0, 1), np.clip(alpha, 0.0, 1.0)], axis=-1)  # type: ignore[arg-type]
+            output_image_u8 = np.rint(rgba * 255.0).astype("uint8")
+            Image.fromarray(output_image_u8, "RGBA").save(output_path, **save_kwargs)
     # Converting the RGB file.
 
     else:
-        # In case the full RGB is missing, it extracts the first available channel.
-        y: "np.ndarray" = read_channel(channels_list[0])
-        if do_srgb:
-            y = linear_to_srgb(y)
-        out_u8: "np.ndarray" = np.rint(np.clip(y, 0, 1) * 255.0).astype("uint8")  # Converting to 8bit int.
-        Image.fromarray(out_u8, "L").save(dst, **save_kwargs)
+        # Extracting the first available channel, in case the full RGB is missing:
+        grayscale: "np.ndarray" = read_channel(channels_list[0])
+        if srgb_tone_map:
+            grayscale = linear_to_srgb(grayscale)
+        output_image_u8: "np.ndarray" = np.rint(np.clip(grayscale, 0, 1) * 255.0).astype("uint8")  # Converting to 8bit int.
+        Image.fromarray(output_image_u8, "L").save(output_path, **save_kwargs)
     # Converting the Grayscale file.
     
     

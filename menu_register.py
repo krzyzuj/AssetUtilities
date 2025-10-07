@@ -25,26 +25,26 @@ class MenuEntry(TypedDict, total=False):
 SECTION_NAME_DEFAULT  = "AssetUtilities"
 
 def menu_register(
-    target_menu: str,
+    menu: str,
     entries: list[MenuEntry],
     debug: bool = False,
-    main_menu: Optional[str] = None,  # Optional submenu name under which all entries are grouped.
+    submenu: Optional[str] = None,  # Optional submenu name under which all entries are grouped.
 ) -> bool:
 
 
 # Pre-validation:
     available_menus = unreal.ToolMenus.get()
     menus = unreal.ToolMenus.get()
-    menu = menus.find_menu(target_menu)
-    if not menu and debug:
-        unreal.log_warning(f"[menu_register] Target menu '{target_menu}' not available yet. Skipping registration.")
+    menu_target = menus.find_menu(menu)
+    if not menu_target and debug:
+        unreal.log_warning(f"[menu_register] Target menu '{menu}' not available yet. Skipping registration.")
         return False
     # Checks if a specified menu exists
 
     folder_menu = available_menus.extend_menu("ContentBrowser.FolderContextMenu")
 
     if not entries:
-        unreal.log_warning(f"[menu_register] No entries for {target_menu}.")
+        unreal.log_warning(f"[menu_register] No entries for {menu}.")
         return False
 
 
@@ -54,23 +54,23 @@ def menu_register(
     else:
         section_name = SECTION_NAME_DEFAULT
 
-    if not _section_exist(menu, section_name):
+    if not _section_exist(menu_target, section_name):
         section_label = _name_to_label(section_name)  # Derives label from the name.
-        menu.add_section(section_name, section_label)
+        menu_target.add_section(section_name, section_label)
     # Ensures the target section exists. Creates a new one if needed.
 
 
 # (Optionally) creating a submenu for all the entries:
-    if main_menu:
-        sub_name = _label_to_name(main_menu)
-        sub = _add_submenu(menu, section_name, section_label, sub_name, main_menu)
-        target_menu_for_entries = sub
+    if submenu:
+        submenu_name = _label_to_name(submenu)
+        submenu_target = _add_submenu(menu_target, section_name, section_label, submenu_name, submenu)
+        target_menu_for_entries = submenu_target
     else:
-        target_menu_for_entries = menu
+        target_menu_for_entries = menu_target
 
 
 # Registering each entry:
-    added: int = 0 # Counts how many entries were registered.
+    entries_added: int = 0 # Counts how many entries were registered.
     clones_added: int = 0 # Counts how many cloned entries were registered to the folder context menu.
 
     for item in entries:
@@ -91,9 +91,9 @@ def menu_register(
         # Command executed by the Unreal, using the dispatcher, when the menu entry is clicked.
 
         entry = unreal.ToolMenuEntry(
-            name= function_name,
-            type= unreal.MultiBlockType.MENU_ENTRY,
-            insert_position= unreal.ToolMenuInsert("", unreal.ToolMenuInsertType.DEFAULT)
+            name = function_name,
+            type = unreal.MultiBlockType.MENU_ENTRY,
+            insert_position = unreal.ToolMenuInsert("", unreal.ToolMenuInsertType.DEFAULT)
 
         )
         entry.set_label(label)
@@ -105,16 +105,16 @@ def menu_register(
         # Adds a tooltip if specified.
 
         entry.set_string_command(
-            type=unreal.ToolMenuStringCommandType.PYTHON,
-            custom_type="",
-            string=cmd,
+            type = unreal.ToolMenuStringCommandType.PYTHON,
+            custom_type = "",
+            string = cmd,
         )
 
         _apply_icon(entry, item, debug) # (Optionally) creates an icon for the menu.
 
         target_menu_for_entries.add_menu_entry(section_name, entry)
         # Attaches the command to the created button.
-        added += 1
+        entries_added += 1
 
 
 # (Optionally) registering a clone of each entry to the folder context menu too:
@@ -123,14 +123,14 @@ def menu_register(
             folder_menu.add_section(section_name, section_label)
 
             folder_target = folder_menu
-            if main_menu:
-                folder_target = _add_submenu(folder_menu, section_name, section_label, sub_name, main_menu)
+            if submenu:
+                folder_target = _add_submenu(folder_menu, section_name, section_label, submenu_name, submenu)
             # Creates a subfolder for all entries if one is already created for "regular" entries.
 
             clone = unreal.ToolMenuEntry(
-                name=function_name,
-                type=unreal.MultiBlockType.MENU_ENTRY,
-                insert_position=unreal.ToolMenuInsert("", unreal.ToolMenuInsertType.DEFAULT)
+                name = function_name,
+                type = unreal.MultiBlockType.MENU_ENTRY,
+                insert_position = unreal.ToolMenuInsert("", unreal.ToolMenuInsertType.DEFAULT)
             )
             clone.set_label(label)
             # Adds the button to the menu.
@@ -140,9 +140,9 @@ def menu_register(
             # Adds a tooltip if specified.
 
             clone.set_string_command(
-                type=unreal.ToolMenuStringCommandType.PYTHON,
-                custom_type="",
-                string=cmd,
+                type = unreal.ToolMenuStringCommandType.PYTHON,
+                custom_type = "",
+                string = cmd,
             )
 
             _apply_icon(clone, item, debug) # (Optionally) creates an icon for the menu.
@@ -157,7 +157,7 @@ def menu_register(
 
 # Refreshing the UI:
     try:
-        path: str = f"{target_menu}.{sub_name}" if (main_menu and sub_name) else target_menu
+        path: str = f"{menu}.{submenu_name}" if (submenu and submenu_name) else menu
         available_menus.refresh_menu_widget(path)
     except RuntimeError:
         available_menus.refresh_all_widgets()
@@ -167,14 +167,14 @@ def menu_register(
 
 
 # Logs:
-    where: str = f"{target_menu}{(' > ' + main_menu) if main_menu else ''}"
-    if added == 1:
+    where: str = f"{menu}{(' > ' + submenu) if submenu else ''}"
+    if entries_added == 1:
         unreal.log(f"[menu_register] Registered 1 entry at: {where}")
     else:
-        unreal.log(f"[menu_register] Registered {added} entries at: {where}")
+        unreal.log(f"[menu_register] Registered {entries_added} entries at: {where}")
     if clones_added:
-        folder_where: str = f"Folder Context menu{(' > ' + main_menu) if main_menu else ''}"
-        if added == 1:
+        folder_where: str = f"Folder Context menu{(' > ' + submenu) if submenu else ''}"
+        if entries_added == 1:
             unreal.log(f"[menu_register] Cloned {clones_added} entry to: {folder_where}")
         else:
             unreal.log(f"[menu_register] Cloned {clones_added} entries at: {folder_where}")
@@ -222,9 +222,9 @@ def _apply_icon(entry: unreal.ToolMenuEntry, item: MenuEntry, debug: bool = Fals
 
 # Creating a big and small icon pair needed by the UE class:
     if brush.startswith(("ClassIcon.", "ClassThumbnail.")): # e.g., ClassIcon.Texture2D
-        cls   = brush.split(".", 1)[1]
-        big   = f"ClassThumbnail.{cls}"
-        small = f"ClassIcon.{cls}"
+        class_   = brush.split(".", 1)[1]
+        big   = f"ClassThumbnail.{class_}"
+        small = f"ClassIcon.{class_}"
     else:
         big = small = brush  # e.g., "Icons.Save"
 

@@ -15,14 +15,14 @@ class TextureTypeConfig(TypedDict):
 #                                              === dataclasses ===
 
 @dataclass
-class MapNameAndRes:
+class MapNameAndResolution:
     filename: str # Original case-sensitive filename.
     resolution: Tuple[int, int] # Texture resolution.
 
 
 @dataclass
 class TextureMapData:
-    path: str # File path.
+    file_path: str # File path.
     resolution: Tuple[int, int] # Texture resolution.
     suffix: str # Declared size suffix.
     filename: str # Case-sensitive file name.

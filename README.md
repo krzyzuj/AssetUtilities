@@ -23,9 +23,18 @@ Install OpenEXR and Numpy for Unreal Engine's Python Environment for processing 
 # Channel Packer
 
 Gathers the required maps, validates them, and packs channels according to your presets, significantly speeding up the workflow.
+More packing modes can be added in config if necessary.
 Registers under the Texture2D and folder context menus.
 
+supported map types:  
+AO, Roughness, Metalness, Height, Mask, Translucency
+Specular, Normal, BentNormal, Bump, Albedo, SSS, Emissive, Glossiness
 Config sections: Global, Generators, Channel Packer
+
+texture compression settings types:  
+Default, Normalmap, Masks, Grayscale, Displacementmap
+
+To add more map types, add their name, suffixes, and default values to TEXTURE_CONFIG in settings.py.
 
 > Note: Originally a single module with a shared backend for both the standalone version and Unreal Engine.
 It was later split for ease of use, but the core structure remains the same, so changes are drop-in across versions.
@@ -62,8 +71,3 @@ It was later split for ease of use, but the core structure remains the same, so 
 |                | no        | sRGB                | true/false        | toggles the sRGB flag in the texture settings                                           | true              |
 |                | yes       | channels            | texture map types | textures mapped to each channel of the final generated texture; alpha can be left empty | x                 |
 
-&NewLine;
-supported map types:
-
-AO, Roughness, Metalness, Height, Mask, Translucency
-Specular, Normal, BentNormal, Bump, Albedo, SSS, Emissive, Glossiness

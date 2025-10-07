@@ -17,31 +17,33 @@ import unreal
 
 from ...common_utils import log
 
-from ..image_lib import (ImageObj, save_image as save_image_file)
+from ..image_lib import (ImageObject, save_image as save_image_file)
 
 from ..texture_settings import (AUTO_SAVE, BACKUP_FOLDER_NAME, EXR_SRGB_CURVE, DELETE_USED)
 
-from ..texture_utils import (ensure_asset_saved, export_temp_file, get_selected_assets, get_tex_compression_settings,
-        group_paths_by_folder, is_asset_data, package_to_object_path, resolve_work_dir, validate_export_ext)
+from ..texture_utils import (ensure_asset_saved, export_temporary_file, get_selected_assets, get_texture_compression_settings,
+                             group_paths_by_folder, is_asset_data, package_to_object_path, resolve_work_directory, validate_export_extension)
+
+from .classes import PackingMode
 
 from .settings import PACKING_MODES
 
 
 
 @dataclass
-class ConvertedEntry:
-    set_key: Optional[str] = None # Texture set name, added later.
-    map_type: Optional[str] = None # Texture type name.
+class ConvertedEXRImage:
+    texture_set_name: Optional[str] = None # Texture set name, added later.
+    texture_type: Optional[str] = None # Texture type name.
 
 @dataclass
 class CPContext:
-    work_dir: str = "" # Absolute path for a temporary folder.
-    export_ext: str = "png" # Validated file extension set in config. For now is set to png to simplify json config.
-    selection_paths: Dict[str, str] = field(default_factory=dict)  # Key is the asset's package path, value is the absolute path of a file when exported to a temporary folder
-    modes_compression_type: Dict[str, Tuple[unreal.TextureCompressionSettings, bool]] = field(default_factory=dict) # Compression setting for imported packed textures for each mode.
-    converted_from_raw: Dict[str, ConvertedEntry] = field(default_factory=dict) # Collection of temporary converted .exr files for processing in the main module, their texture set name and its texture type.
-    temp_path_already_exist: bool = False # If True, then at the end of the channel_packer the main temp directory isn't deleted not to accidentally delete existing files.
-    created_sub_dirs: Set[str] = field(default_factory=set)  # Set of absolute paths to subfolders created in this run; used for cleanup.
+    work_directory: str = "" # Absolute path for a temporary folder.
+    export_extension: str = "png" # Validated file extension set in config. For now is set to png to simplify json config.
+    selection_paths_map: Dict[str, str] = field(default_factory=dict)  # Key is the asset's package path, value is the absolute path of a temporary file when exported to a folder
+    packing_mode_compression_map: Dict[str, Tuple[unreal.TextureCompressionSettings, bool]] = field(default_factory=dict) # Compression setting for imported packed textures for each mode.
+    textures_converted_from_raw: Dict[str, ConvertedEXRImage] = field(default_factory=dict) # Collection of temporary converted .exr files for processing in the main module, their texture set name and its texture type.
+    temporary_path_already_exist: bool = False # If True, then at the end of the channel_packer the main temp directory isn't deleted not to accidentally delete existing files.
+    temporary_subdirectory_paths: Set[str] = field(default_factory=set)  # Set of absolute paths to subfolders created in this run; used for cleanup.
 
 
 
@@ -51,304 +53,304 @@ class CPContext:
 
 
 
-def validate_export_ext_ctx(ctx: "CPContext" = None) -> None:
+def context_validate_export_extension(context: "CPContext" = None) -> None:
 # Ctx wrapper for a regular function.
 
-    if ctx is None:
+    if context is None:
         return
-    ext = validate_export_ext()
-    # ctx.export_ext = ext # Legacy, now just uses png to simplify the setup.
-    ctx.export_ext = "png"
-
+    file_extension: str = validate_export_extension() # Legacy, now just uses png to simplify the setup.
+    context.export_extension = "png"
     return
 
 
-def split_by_parent(ctx: "CPContext") -> Dict[str, List[str]]:
-# Groups absolute paths from ctx.selection_paths values by their parent directory relative to ctx.work_dir.
+def split_by_parent(context: "CPContext") -> Dict[str, List[str]]:
+# Groups absolute paths from context.selection_paths values by their parent directory relative to ctx.work_dir.
 # Used to bind together asset in Content Browser, and its exported temporary file on the drive.
 # Returns a sorted rel_parent: [file names] map.
 
-    files_abs: List[str] = [v for v in ctx.selection_paths.values() if v]
-    root: str = os.path.abspath(ctx.work_dir)
-    groups: Dict[str, List[str]] = defaultdict(list)
+    files_absolute_path: List[str] = [path for path in context.selection_paths_map.values() if path]
+    root_directory: str = os.path.abspath(context.work_directory)
+    grouped_paths_by_parent: Dict[str, List[str]] = defaultdict(list)
 
-    for ap in files_abs:
-        if not os.path.isabs(ap):
-            ap = os.path.abspath(ap)
+    for absolute_path in files_absolute_path:
+        if not os.path.isabs(absolute_path):
+            absolute_path = os.path.abspath(absolute_path)
         try:
-            rel = os.path.relpath(ap, root)
-        except Exception:
+            relative_path = os.path.relpath(absolute_path, root_directory)
+        except ValueError:
             continue
-        rel = rel.replace("\\", "/")
-        parent = os.path.dirname(rel)
-        key = parent if parent else "."
-        name = os.path.basename(rel)
-        groups[key].append(name)
+        relative_path = relative_path.replace("\\", "/")
+        parent_directory_ = os.path.dirname(relative_path)
+        parent_path = parent_directory_ if parent_directory_ else "."
+        file_name = os.path.basename(relative_path)
+        grouped_paths_by_parent[parent_path].append(file_name)
 
-    return {k: sorted(v) for k, v in sorted(groups.items(), key=lambda kv: kv[0])}
+    return {parent_directory: sorted(file_names) for parent_directory, file_names in sorted(grouped_paths_by_parent.items(), key=lambda kv: kv[0])}
 
 
-def list_initial_files(input_folder: str, ctx: "CPContext", ) -> List[str]:
+def list_initial_files(input_folder: str, context: "CPContext", ) -> List[str]:
 # Lists package paths of all selected assets of a given type.
 # If a folder/folders are selected, they have priority over directly selected assets.
 # Input folder is used only with Windows backend. Left for compatibility of the main channel_packer.
 
 
 # Finding the paths to all selected assets:
-    collected: Set[str] = set()
-    pkgs: List[str] = get_selected_assets(recursive=False) or []
+    selected_paths: Set[str] = set()
+    package_paths: List[str] = get_selected_assets(recursive=False) or []
 
-    if not pkgs:
+    if not package_paths:
         log("No assets selected. Aborting.", "error")
-        ctx.selection_paths = {}
+        context.selection_paths_map = {}
 
-    collected.update(pkgs)
+    selected_paths.update(package_paths)
 
 
  # Filtering selection to contain only Texture assets:
-    texture_pkgs: List[str] = []
-    for pkg_path in sorted(collected):
-        obj_path = package_to_object_path(pkg_path)
-        asset_data = unreal.EditorAssetLibrary.find_asset_data(obj_path)
+    texture2d_package_paths: List[str] = []
+    for package_path in sorted(selected_paths):
+        object_path = package_to_object_path(package_path)
+        asset_data = unreal.EditorAssetLibrary.find_asset_data(object_path)
         if asset_data and is_asset_data(asset_data, "Texture2D"):
-            texture_pkgs.append(pkg_path)
+            texture2d_package_paths.append(package_path)
 
-    if not texture_pkgs:
+    if not texture2d_package_paths:
         log("No Texture2D selected. Aborting.", "error")
-        ctx.selection_paths = {}
+        context.selection_paths_map = {}
         return []
 
 # Saving files paths as dict keys:
-    ctx.selection_paths = {pkg: "" for pkg in texture_pkgs}
-    return texture_pkgs
+    context.selection_paths_map = {pkg: "" for pkg in texture2d_package_paths}
+    return texture2d_package_paths
 
 
-def prepare_workspace(_unused: List[str], ctx: "CPContext") -> None:
+def prepare_workspace(_unused: List[str], context: "CPContext") -> None:
 # Exports assets whose package paths are keys in ctx.selection_paths into a temporary folder.
 # Writes each absolute exported file path back to ctx.selection_paths.
 
 
 # Setting Texture Compression Settings per mode:
-    packing_mode_compression_map(ctx)
+    packing_mode_compression_map(context)
 
 # Creating temporary folder and it's subfolders:
-    resolve_work_dir_ctx(ctx)
-    work_dir = ctx.work_dir
+    context_resolve_work_directory(context)
+    work_directory: str = context.work_directory
 
 
 # Preparing the assets:
-    cleaned: Dict[str, str] = {}
-    for pkg in list(ctx.selection_paths.keys()):
-        if ensure_asset_saved(pkg, auto_save=AUTO_SAVE):
-            cleaned[pkg] = ""
+    saved_asset_only_paths: Dict[str, str] = {}
+    for selection_path in list(context.selection_paths_map.keys()):
+        if ensure_asset_saved(selection_path, auto_save=AUTO_SAVE):
+            saved_asset_only_paths[selection_path] = ""
         else:
-            log(f"Skipping unsaved asset: {pkg}", "warn")
-    ctx.selection_paths = cleaned
+            log(f"Skipping unsaved asset: {selection_path}", "warn")
+    context.selection_paths_map = saved_asset_only_paths
     # Checks if all selected assets are saved. If specified in the config, saves the unsaved files too.
 
-    groups: Dict[str, List[str]] = group_paths_by_folder(list(ctx.selection_paths.keys()))
+    paths_grouped_by_parent: Dict[str, List[str]] = group_paths_by_folder(list(context.selection_paths_map.keys()))
     # Groups asset package paths by their parent folder relative to /Game/ folder in Content Browser.
 
-    for parent_folder, pkg_paths in groups.items():
-        if parent_folder == ".": # For the assets directly in the root folder.
-            out_dir = work_dir
-            sub_folder_path: str = None
+    for parent_folder_path, package_paths in paths_grouped_by_parent.items():
+        if parent_folder_path == ".": # For the assets directly in the root folder.
+            target_directory: str = work_directory
+            subfolder_path: str = None
         else:
-            safe_rel = os.path.normpath(parent_folder).lstrip(r"\/")
-            out_dir = os.path.join(work_dir, safe_rel)
-            os.makedirs(out_dir, exist_ok=True)
-            sub_folder_path = os.path.abspath(out_dir).replace("\\", "/")
+            safe_relative_path: str = os.path.normpath(parent_folder_path).lstrip(r"\/")
+            target_directory: str = os.path.join(work_directory, safe_relative_path)
+            os.makedirs(target_directory, exist_ok=True)
+            subfolder_path: str = os.path.abspath(target_directory).replace("\\", "/")
     # Sets the path for a temporary file extraction.
 
 
 # Exporting assets:
-        for pkg_path in sorted(set(pkg_paths)):
-            asset_name: str = pkg_path.rsplit("/", 1)[-1]
-            object_path: str = package_to_object_path(pkg_path)
+        for package_path in sorted(set(package_paths)):
+            asset_name: str = package_path.rsplit("/", 1)[-1]
+            object_path: str = package_to_object_path(package_path)
             asset = unreal.EditorAssetLibrary.load_asset(object_path)
 
-            exported_file: tuple[Optional[str], bool] = export_temp_file(asset, out_dir, asset_name, pkg_path, exr_srgb_curve=EXR_SRGB_CURVE)
-            exported_path, was_float = exported_file
-            if not exported_path:
+            temporary_file: tuple[Optional[str], bool] = export_temporary_file(asset, target_directory, asset_name, package_path, exr_srgb_curve=EXR_SRGB_CURVE)
+            temporary_file_path, was_source_float = temporary_file
+            if not temporary_file_path:
                 continue
 
-            abs_path: str = os.path.abspath(exported_path).replace("\\", "/")
-            ctx.selection_paths[pkg_path] = abs_path
+            temporary_file_absolute_path: str = os.path.abspath(temporary_file_path).replace("\\", "/")
+            context.selection_paths_map[package_path] = temporary_file_absolute_path
 
-            if was_float:
-                ctx.converted_from_raw[abs_path] = ConvertedEntry()
+            if was_source_float:
+                context.textures_converted_from_raw[temporary_file_absolute_path] = ConvertedEXRImage()
             # Stores a converted file path for logs.
 
-            if sub_folder_path:
-                ctx.created_sub_dirs.add(sub_folder_path)
-            # Adds path for created sub dirs, used later for cleanup.
+            if subfolder_path:
+                context.temporary_subdirectory_paths.add(subfolder_path)
+            # Adds a path for created sub dirs, used later for cleanup.
 
-def save_image(img: ImageObj, out_dir: str, filename: str, mode_name: str | None, ctx: "CPContext") -> None:
+def save_image(image: ImageObject, temporary_directory: str, file_name: str, mode_name: str | None, context: "CPContext") -> None:
 # Writes image to a temp file in out_dir, then imports it into the Content Browser to a corresponding folder with proper texture compression setting.
 # Deletes the temp file afterward.
 
 # Creating final paths in Content Browser:
-    work_dir = ctx.work_dir
-    relative_path = os.path.relpath(out_dir, work_dir).replace("\\", "/")
+    work_directory = context.work_directory
+    relative_path = os.path.relpath(temporary_directory, work_directory).replace("\\", "/")
     if relative_path in (".", ""):
-        dest_pkg_dir = "/Game"
+        target_package_path = "/Game"
     else:
-        dest_pkg_dir = f"/Game/{relative_path.lstrip('/').lstrip('./')}"
+        target_package_path = f"/Game/{relative_path.lstrip('/').lstrip('./')}"
 
 
 # Writing a temporary file into out_dir:
-    ext: str = ctx.export_ext
-    os.makedirs(out_dir, exist_ok=True)
-    tmp_file = os.path.join(out_dir, f"{filename}.{ext}")
+    file_extension: str = context.export_extension
+    os.makedirs(temporary_directory, exist_ok=True)
+    temporary_file_path = os.path.join(temporary_directory, f"{file_name}.{file_extension}")
     try:
-        save_image_file(img, tmp_file) # Saves the file using an image library.
+        save_image_file(image, temporary_file_path) # Saves the file using an image library.
 
 
 # Importing the file into Unreal Engine:
-        unreal.EditorAssetLibrary.make_directory(dest_pkg_dir)
+        unreal.EditorAssetLibrary.make_directory(target_package_path)
 
         task = unreal.AssetImportTask()
-        task.filename = tmp_file
-        task.destination_path = dest_pkg_dir
-        task.destination_name = filename
+        task.filename = temporary_file_path
+        task.destination_path = target_package_path
+        task.destination_name = file_name
         task.automated = True
         task.replace_existing = True
 
         unreal.AssetToolsHelpers.get_asset_tools().import_asset_tasks([task])
 
 
-        dest_asset = f"{dest_pkg_dir}/{filename}"
+        target_asset_path = f"{target_package_path}/{file_name}"
         imported_paths = list(task.imported_object_paths or [])
 
-        if not imported_paths or not unreal.EditorAssetLibrary.does_asset_exist(dest_asset):
-            log(f"Couldn't import created map into Unreal: '{dest_asset}'. Aborting.", "error")
+        if not imported_paths or not unreal.EditorAssetLibrary.does_asset_exist(target_asset_path):
+            log(f"Couldn't import created map into Unreal: '{target_asset_path}'. Aborting.", "error")
             raise SystemExit(1)
 
 
 # Setting proper compression type per mode:
-        tex = unreal.EditorAssetLibrary.load_asset(dest_asset)
-        if tex:
-            compression_type, srgb = ctx.modes_compression_type.get(
+        texture = unreal.EditorAssetLibrary.load_asset(target_asset_path)
+        if texture:
+            texture_compression_type, srgb = context.packing_mode_compression_map.get(
                 (mode_name or "").strip().lower(),
                 (unreal.TextureCompressionSettings.TC_DEFAULT, True)  # fallback
             )
 
-            if tex.get_editor_property("compression_settings") != compression_type:
-                tex.set_editor_property("compression_settings", compression_type)
+            if texture.get_editor_property("compression_settings") != texture_compression_type:
+                texture.set_editor_property("compression_settings", texture_compression_type)
 
-            if tex.get_editor_property("sRGB") != srgb:
-                tex.set_editor_property("sRGB", srgb)
+            if texture.get_editor_property("sRGB") != srgb:
+                texture.set_editor_property("sRGB", srgb)
 
             if AUTO_SAVE:
-                unreal.EditorAssetLibrary.save_loaded_asset(tex, only_if_is_dirty=True)
+                unreal.EditorAssetLibrary.save_loaded_asset(texture, only_if_is_dirty=True)
 
 
 # Deleting a temporary file:
     finally:
         try:
-            if os.path.isfile(tmp_file):
-                os.remove(tmp_file)
+            if os.path.isfile(temporary_file_path):
+                os.remove(temporary_file_path)
         except Exception:
             pass
 
 
-def move_used_map(file_path: str, bak_dir: Optional[str], ctx: "CPContext") -> None:
+def move_used_map(file_path: str, backup_directory: Optional[str], context: "CPContext") -> None:
 # Moves asset used for the texture generation to a specified folder.
-# Version for Unreal moves assets in Content Browser, so input bak_dir isn't used.
-
+# Version for Unreal moves assets in Content Browser, so the input backup_directory isn't used.
 
 
 # Checking the config:
-    bak: str = (BACKUP_FOLDER_NAME or "").strip().strip("/")
-    if not bak or DELETE_USED:
+    backup_folder_name: str = (BACKUP_FOLDER_NAME or "").strip().strip("/")
+    if not backup_folder_name or DELETE_USED:
         return
 
 # Mapping temporary exported files to the original asset in the Content Browser:
-    pkg_path: str = ""
-    file_path_norm: str = os.path.abspath(file_path).replace("\\", "/")
-    for pkg, abs_path in ctx.selection_paths.items():
-        if file_path_norm == abs_path:
-            pkg_path = pkg
+    package_path: str = ""
+    input_temporary_file_path: str = os.path.abspath(file_path).replace("\\", "/")
+    for context_package_path, temporary_file_path in context.selection_paths_map.items():
+        if input_temporary_file_path == temporary_file_path:
+            package_path = context_package_path
             break
 
-    if not pkg_path:
-        file_name: str = os.path.basename(file_path_norm)
-        log(f"Skip moving to backup: cannot resolve mapping for {file_name} in the Content Browser.", "error")
+    if not package_path:
+        file_name: str = os.path.basename(input_temporary_file_path)
+        log(f"Skipped moving to backup: cannot resolve mapping for {file_name} in the Content Browser.", "error")
         return
 
 
 # Deriving a mapped asset's final path in Content Browser:
-    base_dir = pkg_path.rsplit("/", 1)[0]
-    dest_dir = f"{base_dir}/{bak}"
+    asset_original_directory = package_path.rsplit("/", 1)[0]
+    target_backup_path = f"{asset_original_directory}/{backup_folder_name}"
     # Creates a backup directory path.
 
-    unreal.EditorAssetLibrary.make_directory(dest_dir)
+    unreal.EditorAssetLibrary.make_directory(target_backup_path)
 
-    base_name = pkg_path.rsplit("/", 1)[-1]
-    dest_asset = f"{dest_dir}/{base_name}"
+    asset_name = package_path.rsplit("/", 1)[-1]
+    target_asset_path = f"{target_backup_path}/{asset_name}"
     # Creates an asset's final path in a backup directory.
 
-    if unreal.EditorAssetLibrary.does_asset_exist(dest_asset):
-        log(f"Aborted moving to backup: asset already exists at '{dest_asset}'", "warn")
+    if unreal.EditorAssetLibrary.does_asset_exist(target_asset_path):
+        log(f"Aborted moving to backup: asset already exists at '{target_asset_path}'", "warn")
         return
 
 
 # Moving the file:
-    ok = unreal.EditorAssetLibrary.rename_asset(pkg_path, dest_asset)
+    ok = unreal.EditorAssetLibrary.rename_asset(package_path, target_asset_path)
     if not ok:
-        log(f"CB move failed: '{pkg_path}' → '{dest_asset}'", "warn")
+        log(f"Content Browser asset move failed: '{package_path}' to '{target_asset_path}'", "warn")
 
 
-def cleanup(ctx: "CPContext") -> None:
-    work_dir: str = ctx.work_dir.strip()
+def cleanup(context: "CPContext") -> None:
+# Removes temporary files and their subfolders.
+# Deletes assets used in creating the packaged texture if specified.
+
+    work_directory: str = context.work_directory.strip()
 
 # Deleting extracted files:
-    sel_paths = ctx.selection_paths or {}
-    work_dir_c = os.path.abspath(os.path.normpath(ctx.work_dir)).replace("\\", "/")
-    for p in sel_paths.values():
-        if not p:
+    selection_paths: Dict[str, str] = context.selection_paths_map or {}
+    work_directory_absolute: str = os.path.abspath(os.path.normpath(context.work_directory)).replace("\\", "/")
+    for context_temporary_file_path in selection_paths.values():
+        if not context_temporary_file_path:
             continue
-        ap = os.path.abspath(os.path.normpath(p)).replace("\\", "/")
-        if ap.startswith(work_dir_c) and os.path.isfile(ap):
+        temporary_file_path: str = os.path.abspath(os.path.normpath(context_temporary_file_path)).replace("\\", "/")
+        if temporary_file_path.startswith(work_directory_absolute) and os.path.isfile(temporary_file_path):
             try:
-                os.remove(ap)
+                os.remove(temporary_file_path)
             except FileNotFoundError:
                 pass
-            except PermissionError as e:
-                log(f"No permission to remove '{ap}': {e}", "warn")
-            except OSError as e:
-                log(f"Failed to remove '{ap}': {e}", "warn")
+            except PermissionError as error:
+                log(f"No permission to remove '{temporary_file_path}': {error}", "warn")
+            except OSError as error:
+                log(f"Failed to remove '{temporary_file_path}': {error}", "warn")
 
 
 # Delete used files:
     if DELETE_USED:
-        for pkg_path in (ctx.selection_paths or {}):
-            if not pkg_path.startswith("/Game/"):
+        for package_path in (context.selection_paths_map or {}):
+            if not package_path.startswith("/Game/"):
                 continue
 
-            if unreal.EditorAssetLibrary.does_asset_exist(pkg_path):
-                ok = unreal.EditorAssetLibrary.delete_asset(pkg_path)
+            if unreal.EditorAssetLibrary.does_asset_exist(package_path):
+                ok: bool = unreal.EditorAssetLibrary.delete_asset(package_path)
                 if not ok:
-                    log(f"Failed to delete asset '{pkg_path}' from Content Browser.", "warn")
+                    log(f"Failed to delete asset '{package_path}' from Content Browser.", "warn")
 
 
 # Deleting Empty folders:
-    project_root: str = os.path.abspath(unreal.SystemLibrary.get_project_directory())
-    content_root: str = os.path.abspath(unreal.SystemLibrary.get_project_content_directory())
-    is_critical_root: bool = work_dir in {project_root, content_root}
+    project_root_directory: str = os.path.abspath(unreal.SystemLibrary.get_project_directory())
+    content_root_directory: str = os.path.abspath(unreal.SystemLibrary.get_project_content_directory())
+    is_critical_directory: bool = work_directory in {project_root_directory, content_root_directory}
     # Extra safety check to never delete the Project or Content root directories.
 
-    if not ctx.temp_path_already_exist and not is_critical_root:
-        shutil.rmtree(work_dir, ignore_errors=True)
+    if not context.temporary_path_already_exist and not is_critical_directory:
+        shutil.rmtree(work_directory, ignore_errors=True)
         return
-    elif not ctx.temp_path_already_exist and is_critical_root:
-        log(f"Critical folder used as temporary directory: {work_dir}. Cleaning subfolders only.", "error")
+    elif not context.temporary_path_already_exist and is_critical_directory:
+        log(f"Critical folder used as temporary directory: {work_directory}. Cleaning subfolders only.", "error")
 
-    for base in sorted(ctx.created_sub_dirs, key=lambda p: p.count(os.sep)):
-        if os.path.commonpath([work_dir, base]) != work_dir:
+    for temporary_subdirectories in sorted(context.temporary_subdirectory_paths, key=lambda p: p.count(os.sep)):
+        if os.path.commonpath([work_directory, temporary_subdirectories]) != work_directory:
             continue
 
-        for root, _, _ in os.walk(base, topdown=False):
+        for root, _, _ in os.walk(temporary_subdirectories, topdown=False):
             try:
                 os.rmdir(root)
             except OSError:
@@ -361,34 +363,41 @@ def cleanup(ctx: "CPContext") -> None:
 #                                       === Unreal backend only ===
 
 
-def resolve_work_dir_ctx(ctx: "CPContext") -> None:
-# ctx wrapper for a regular function.
+def context_resolve_work_directory(context: "CPContext") -> None:
+# Context wrapper for a regular function.
 # Resolves the path for a temporary folder for Unreal to extract the files to.
 # Uses a path provided in config, if no valid path is available, uses the project's default path.
 
-    final_path, preexisted = resolve_work_dir()
-    ctx.work_dir = final_path
-    ctx.temp_path_already_exist = preexisted
+    resolved_work_directory: tuple[str,bool] = resolve_work_directory()
+    final_work_path, path_preexisted = resolved_work_directory
+    context.work_directory = final_work_path
+    context.temporary_path_already_exist = path_preexisted
     return None
 
 
-def packing_mode_compression_map(ctx: "CPContext") -> None:
-    packing_modes = PACKING_MODES
+def packing_mode_compression_map(context: "CPContext") -> None:
+# Context wrapper for a regular function.
+# Validates the input texture compression settings from the config.
+# Returns Unreal's Texture Compression Setting, its sRGB setting bool and flags whether input was correct or uses the default one.
+
+    packing_modes: list[PackingMode] = PACKING_MODES
     compression_map: Dict[str, Tuple[unreal.TextureCompressionSettings, bool]] = {}
+
     for mode in packing_modes:
-        name = (mode.get("mode_name") or "").strip()
-        tex_comp = mode.get("texture_compression")
+        mode_name: str = (mode.get("mode_name") or "").strip()
 
-        compression_type, default_srgb, valid_comp_setting = get_tex_compression_settings(
-            mode.get("texture_compression")
-        )
+        texture_compression_settings: tuple[unreal.TextureCompressionSettings, bool, bool] = get_texture_compression_settings(mode.get("texture_compression"))
+        compression_type, default_srgb, valid_texture_compression_setting = texture_compression_settings
 
-        override = mode.get("sRGB")
-        if isinstance(override, bool): # Input: True/False bool.
-            srgb = override
+        texture_compression_type: str = mode.get("texture_compression")
 
-        elif isinstance(override, str) and override.strip() != "": # Input: Literal "sRGB/RGB".
-            val = override.strip().lower()
+
+        srgb_bool = mode.get("sRGB")
+        if isinstance(srgb_bool, bool):
+            srgb = srgb_bool
+
+        elif isinstance(srgb_bool, str) and srgb_bool.strip() != "": # Input: Literal "sRGB/RGB".
+            val = srgb_bool.strip().lower()
             if val == "srgb":
                 srgb = True
             elif val == "rgb":
@@ -397,15 +406,16 @@ def packing_mode_compression_map(ctx: "CPContext") -> None:
                 srgb = default_srgb
         else:
             srgb = default_srgb
-        # Overrides the default sRGB mode with the user-set config.
-        compression_map[name.lower()] = (compression_type, srgb)
+        # Overrides the default sRGB mode with the user-set config id specified.
+
+        compression_map[mode_name.lower()] = (compression_type, srgb)
 
 
-        if not valid_comp_setting and name != "":
-            if tex_comp:
-                log(f"Mode '{name}': Unknown texture_compression '{tex_comp}'. Using TC_DEFAULT.", "warn")
+        if not valid_texture_compression_setting and mode_name != "":
+            if texture_compression_type:
+                log(f"Mode '{mode_name}': Unknown texture_compression '{texture_compression_type}'. Using TC_DEFAULT.", "warn")
             else:
-                log(f"Mode '{name}': Empty texture_compression. Using TC_DEFAULT.", "warn")
+                log(f"Mode '{mode_name}': Empty texture_compression. Using TC_DEFAULT.", "warn")
 
-    ctx.modes_compression_type = compression_map
+    context.packing_mode_compression_map = compression_map
     return

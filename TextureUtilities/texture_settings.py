@@ -10,7 +10,7 @@ import unreal
 from .texture_classes import TextureTypeConfig
 
 class CompressionSettings(NamedTuple):
-    tex_comp_type: unreal.TextureCompressionSettings
+    texture_compression_type: unreal.TextureCompressionSettings
     default_srgb: bool
 # Unreal's texture compression settings.
 
@@ -45,7 +45,7 @@ SHOW_DETAILS: bool = _as_bool(_global_cfg.get("SHOW_DETAILS", False)) # If true,
 _generators_cfg = _config_data.get("generators", {})
 FILE_TYPE: str = _generators_cfg.get("FILE_TYPE", "png").strip() # File type extension for temporary texture files created outside Unreal.
 UNREAL_TEMP_FOLDER: str = _generators_cfg.get("UNREAL_TEMP_FOLDER", "").strip() # Destination folder for exporting source textures for channel packing.
-DEST_FOLDER_NAME: str = _generators_cfg.get("DEST_FOLDER_NAME", "").strip() # If provided, places generated channel-packed maps into a custom folder.
+TARGET_FOLDER_NAME: str = _generators_cfg.get("DEST_FOLDER_NAME", "").strip() # If provided, places generated channel-packed maps into a custom folder.
 BACKUP_FOLDER_NAME: str = _generators_cfg.get("BACKUP_FOLDER_NAME", "").strip() # If provided, moves source maps used during generation into a backup folder after creating the channel-packed map.
 EXR_SRGB_CURVE: bool = _as_bool(_generators_cfg.get("EXR_SRGB_CURVE", True)) # If true, applies sRGB gamma transform when converting the .exr, mimicking Photoshop behavior, when converting with gamma 1.0/exposure 0.0
 DELETE_USED: bool = _as_bool(_generators_cfg.get("DELETE_USED", False)) # If true, deletes the files used by the function.

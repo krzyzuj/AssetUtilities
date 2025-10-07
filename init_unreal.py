@@ -8,11 +8,7 @@ from AssetUtilities.menu_register import MenuEntry, menu_register
 
 _here = Path(__file__).resolve()
 
-
 unreal.log(f">>> Asset Utilities scripts initialized: <<<")
-# unreal.log(f"{_here.as_posix()}")
-
-
 
 menu_register(
     "ContentBrowser.AssetContextMenu.Texture2D",
