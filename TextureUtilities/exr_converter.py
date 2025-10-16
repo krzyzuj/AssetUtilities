@@ -14,7 +14,7 @@ from ..common_utils import log
 from .texture_settings import SHOW_DETAILS
 
 
-@lru_cache(maxsize=1)
+@lru_cache(maxsize = 1)
 def check_exr_libraries() -> bool:
 # Checks in a separate process if the necessary libraries are available.
 
@@ -66,13 +66,13 @@ def exr_to_image(source_exr: str, *, output_extension: str = "png", srgb_transfo
     ]
 
     kwargs: dict[str, object] = dict(
-        input=_exr_helper_code(),
-        text=True,
-        capture_output=True,
-        check=True,
-        env=env,
-        encoding="utf-8",
-        errors="replace",
+        input = _exr_helper_code(),
+        text = True,
+        capture_output = True,
+        check = True,
+        env = env,
+        encoding = "utf-8",
+        errors = "replace",
     )
 
     if os.name == "nt":

@@ -1,20 +1,20 @@
 {
   "global": {
     "AUTO_SAVE": true,
-    "SHOW_DETAILS": true
+    "SHOW_DETAILS": true,
+    "DEBUG": false
   },
 
  "generators": {
-   "FILE_TYPE": "png",
    "UNREAL_TEMP_FOLDER": "",
-   "DEST_FOLDER_NAME": "created_maps",
-   "BACKUP_FOLDER_NAME": "",
    "EXR_SRGB_CURVE": true,
+   "BACKUP_FOLDER_NAME": "",
    "DELETE_USED": false
  },
 
   "channel_packer": {
     "RESIZE_STRATEGY": "down",
+    "TARGET_FOLDER_NAME": "created_maps",
     "PACKING_MODES": [
       {
         "mode_name": "ARM",
@@ -53,5 +53,16 @@
         }
       }
     ]
-  }
+  },
+
+ "linear_color_curve_sampler": {
+   "CUSTOM_PREFIX": "",
+   "TARGET_FOLDER_NAME": "generated_curves",
+   "SWATCH_COUNT": 5,
+   "EXPORT_PRESET": "all",
+   "DIVISION_METHOD": "perceptual",
+   "LIGHT_BAND_SIZE": 0.5,
+   "STEP_TRANSITION": false,
+   "USE_FULL_RESOLUTION": false
+ }
 }

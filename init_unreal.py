@@ -20,7 +20,15 @@ menu_register(
             # "section_name": "ImportedAssetActions",
             "also_in_folders": True,
             "icon": "ClassIcon.Texture2D",
-        }
+        },
+        {
+            "label": "Run Color Curve Generator",
+            "target_module": "AssetUtilities.TextureUtilities.LinearColorCurveSampler.linear_color_curve_sampler",
+            "tooltip": "Creates Linear Color Curves with colors sampled from selected textures.",
+            # "section_name": "ImportedAssetActions",
+            "also_in_folders": False,
+            "icon": "ClassIcon.CurveBase",
+        },
     ]),
     # main_menu="PythonTexture Tools"
 )

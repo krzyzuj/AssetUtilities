@@ -15,7 +15,7 @@ from .image_lib import close_image
 from .exr_converter import (check_exr_libraries, exr_to_image)
 
 from .texture_classes import (MapNameAndResolution, TextureMapData)
-from .texture_settings import (ALLOWED_FILE_TYPES, BACKUP_FOLDER_NAME, TARGET_FOLDER_NAME, COMPRESSION_TYPES, FILE_TYPE, SIZE_SUFFIXES, SHOW_DETAILS, UNREAL_TEMP_FOLDER, CompressionSettings)
+from .texture_settings import (ALLOWED_FILE_TYPES, COMPRESSION_TYPES, FILE_TYPE, SIZE_SUFFIXES, SHOW_DETAILS,TEXTURE_CONFIG, TEXTURE_PREFIXES, CompressionSettings)
 
 
 
@@ -68,6 +68,44 @@ def detect_size_suffix(name: str) -> str:
     alt_match: Optional[re.Match[str]] = re.search(alt_pattern, name.lower())
     return alt_match.group(1) if alt_match else ""
     # Returns the captured token e.g., '2k' if able to find one
+
+
+def derive_texture_name(file_name: str) -> str:
+# Extracts texture name from the file's name.
+
+    file_name_lower: str = file_name.lower() # Normalized filename.
+    separator = r"[\._\-]"
+    initial_size_suffix: Optional[str] = detect_size_suffix(file_name) or "" # used to find suffixes in the style of: "_roughness_2k", "_2K-roughness", etc.
+
+# Removing type suffix:
+    found_suffix_position: Optional[int] = None
+    for _, config in TEXTURE_CONFIG.items():
+        for type_suffix in (s.lower() for s in config.get("suffixes", [])):
+            pattern: Optional[str] = match_suffixes(file_name_lower, type_suffix, (initial_size_suffix or None))
+            if not pattern:
+                continue
+            match: Optional[re.Match[str]] = re.search(pattern, file_name, flags = re.IGNORECASE)
+            if not match:
+                continue
+            found_suffix_position = match.start()
+            break
+        if found_suffix_position is not None:
+            break
+    stripped_name = (file_name[:found_suffix_position] if found_suffix_position is not None else file_name).rstrip("_-.")
+
+# Removing size suffix:
+    processed_size_suffix = detect_size_suffix(stripped_name)
+    if processed_size_suffix:
+        stripped_name = re.sub(rf"{separator}{re.escape(processed_size_suffix)}$", "", stripped_name, flags = re.IGNORECASE)
+
+# Removing texture prefix:
+    asset_type_prefixes = [prefix.lower() for prefix in TEXTURE_PREFIXES if prefix]
+    if asset_type_prefixes:
+        prefixes_alt = "|".join(sorted(set(asset_type_prefixes), key=len, reverse=True))
+        stripped_name = re.sub(rf"(?i)^(?:{prefixes_alt})[\._\-]+", "", stripped_name)
+    #  e.g. "T_"
+
+    return stripped_name
 
 
 def ensure_asset_saved(package_path: str, *, auto_save: bool) -> bool:
@@ -322,21 +360,21 @@ def list_selected_assets() -> List[str]:
     return sorted(assets_package_paths)
 
 
-def make_output_dirs(base_directory: str) -> tuple[str, Optional[str]]:
+def make_output_dirs(base_directory: str, *, target_folder_name: Optional[str], backup_folder_name: Optional[str]) -> tuple[str, Optional[str]]:
 # Returns the output and optional backup directories for a given base path:
 
     base_directory = os.path.abspath(base_directory or ".")
 
-    target_folder_name = (TARGET_FOLDER_NAME or "").strip()
+    target_folder_name = (target_folder_name or "").strip()
 
     target_folder_directory = os.path.join(base_directory, target_folder_name) if target_folder_name else base_directory
-    os.makedirs(target_folder_directory, exist_ok=True)
+    os.makedirs(target_folder_directory, exist_ok = True)
 
     backup_folder_directory = None
-    backup_folder_name = (BACKUP_FOLDER_NAME or "").strip()
+    backup_folder_name = (backup_folder_name or "").strip()
     if backup_folder_name:
         backup_folder_directory = os.path.join(base_directory, backup_folder_name)
-        os.makedirs(backup_folder_directory, exist_ok=True)
+        os.makedirs(backup_folder_directory, exist_ok = True)
 
     return target_folder_directory, backup_folder_directory
 
@@ -395,32 +433,6 @@ def package_to_object_path(package_path: str) -> str:
         return ""
     object_name: str = package_path.rsplit("/", 1)[-1]
     return f"{package_path}.{object_name}"
-
-
-def resolve_work_directory() -> Tuple[str, bool]:
-# Resolves the path for a temporary folder for Unreal or Windows to extract the files to.
-# Uses a path provided in config, if no valid path is available, uses the project's default path.
-
-    project_directory: str = unreal.SystemLibrary.get_project_directory()
-    default_directory: str = os.path.abspath(os.path.join(project_directory, "TemporaryFolder"))
-    temporary_directory = (UNREAL_TEMP_FOLDER or "").strip()
-
-    final_path: str = os.path.abspath(os.path.normpath(temporary_directory)) if temporary_directory else default_directory
-
-    preexisted_directory = os.path.isdir(final_path)
-    try:
-        os.makedirs(final_path, exist_ok=True)
-
-    except OSError:
-        log("No valid path for temp folder; falling back to default.", "warn")
-        final_path = default_directory
-        preexisted_directory = os.path.isdir(final_path)
-        try:
-            os.makedirs(final_path, exist_ok=True)
-        except OSError:
-            log(f"Cannot create default temp folder: {final_path}", "error")
-            raise SystemExit(1)
-    return final_path, preexisted_directory
 
 
 def resolution_to_suffix(size: Tuple[int, int]) -> str:

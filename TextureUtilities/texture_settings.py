@@ -4,10 +4,10 @@
 import json
 from pathlib import Path
 from typing import Dict, List, NamedTuple, Set
-
 import unreal
 
 from .texture_classes import TextureTypeConfig
+
 
 class CompressionSettings(NamedTuple):
     texture_compression_type: unreal.TextureCompressionSettings
@@ -40,15 +40,32 @@ with _config_path.open("r", encoding="utf-8") as f:
 _global_cfg = _config_data.get("global", {})
 AUTO_SAVE: bool = _as_bool(_global_cfg.get("AUTO_SAVE", False))  # If true, auto-saves unsaved assets; otherwise logs and skips them.
 SHOW_DETAILS: bool = _as_bool(_global_cfg.get("SHOW_DETAILS", False)) # If true, shows details like exact resolution when printing logs.
+DEBUG: bool = _as_bool(_global_cfg.get("DEBUG", False))
 
 # Generators:
 _generators_cfg = _config_data.get("generators", {})
 FILE_TYPE: str = _generators_cfg.get("FILE_TYPE", "png").strip() # File type extension for temporary texture files created outside Unreal.
 UNREAL_TEMP_FOLDER: str = _generators_cfg.get("UNREAL_TEMP_FOLDER", "").strip() # Destination folder for exporting source textures for channel packing.
-TARGET_FOLDER_NAME: str = _generators_cfg.get("DEST_FOLDER_NAME", "").strip() # If provided, places generated channel-packed maps into a custom folder.
 BACKUP_FOLDER_NAME: str = _generators_cfg.get("BACKUP_FOLDER_NAME", "").strip() # If provided, moves source maps used during generation into a backup folder after creating the channel-packed map.
 EXR_SRGB_CURVE: bool = _as_bool(_generators_cfg.get("EXR_SRGB_CURVE", True)) # If true, applies sRGB gamma transform when converting the .exr, mimicking Photoshop behavior, when converting with gamma 1.0/exposure 0.0
 DELETE_USED: bool = _as_bool(_generators_cfg.get("DELETE_USED", False)) # If true, deletes the files used by the function.
+
+# Channel Packer:
+_channel_cfg = _config_data.get("channel_packer", {})
+RESIZE_STRATEGY: str = _channel_cfg.get("RESIZE_STRATEGY", "down").strip() # Specifies how textures are rescaled when resolutions differ within a set: down to the smallest or up to the largest.
+CHANNEL_TARGET_FOLDER_NAME: str = _channel_cfg.get("TARGET_FOLDER_NAME", "").strip() # If provided, places generated channel-packed maps into a custom folder.
+PACKING_MODES = _channel_cfg.get("PACKING_MODES", []) # Uses TEXTURE_CONFIG keys for texture maps to be put into channels. The packing mode is skipped if "name": is empty.
+
+# Linear Color Curve Sampler:
+_color_curve_cfg = _config_data.get("linear_color_curve_sampler", {})
+SWATCH_COUNT: int = _color_curve_cfg.get("SWATCH_COUNT", 5) # Number of color swatches sampled from the image.
+DIVISION_METHOD: str = _color_curve_cfg.get("DIVISION_METHOD", "perceptual").strip() # Image's lightness partitioning method: "perceptual" or "uniform".
+EXPORT_PRESET: str = _color_curve_cfg.get("EXPORT_PRESET", "values").strip() # Color picking preset name: "dominant", "diverse", "values", or "all" (exports all three).
+LIGHT_BAND_SIZE: int = _color_curve_cfg.get("LIGHT_BAND_SIZE", 0.5)  # Width of the lightness sample for pixel weighting; larger for more color averaging.
+COLORCURVE_TARGET_FOLDER_NAME: str = _color_curve_cfg.get("TARGET_FOLDER_NAME", "").strip() # If provided, places generated curves into a custom folder.
+CUSTOM_PREFIX: str = _color_curve_cfg.get("CUSTOM_PREFIX", "").strip() # Optional prefix added to the generated asset name.
+STEP_TRANSITION: bool =_as_bool(_color_curve_cfg.get("STEP_TRANSITION", False))  # Uses step transitions between swatches for the created curve (instead of smooth interpolation).
+USE_FULL_RESOLUTION: bool =_as_bool(_color_curve_cfg.get("USE_FULL_RESOLUTION", False)) # If False, downscales the image for speed; set True to samples at full resolution.
 
 
 
@@ -85,5 +102,5 @@ COMPRESSION_TYPES: Dict[str, CompressionSettings] = {
     "Displacementmap":CompressionSettings(unreal.TextureCompressionSettings.TC_DISPLACEMENTMAP, False),
 }
 
-
+TEXTURE_PREFIXES: List[str] = ["t","tex","tx"] # Prefixes to strip when deriving a clean texture name.
 

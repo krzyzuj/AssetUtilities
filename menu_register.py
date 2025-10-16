@@ -7,10 +7,10 @@ from typing import TypedDict, NotRequired, Tuple, Optional
 import unreal
 
 
-class MenuEntry(TypedDict, total=False):
+class MenuEntry(TypedDict, total = False):
     label: NotRequired[str] # Falls back to the function name if missing.
     target_module: str # Full dotted path to the Python module, or ".module:func".
-    inject_ctx: NotRequired[str] # Optional; Full dotted path to the external context factory module or ".module:factory". Default looks for a factory name: build_ctx.
+    inject_context: NotRequired[str] # Optional; Full dotted path to the external context factory module or ".module:factory". Default looks for a factory name: build_ctx.
     tooltip: NotRequired[str] # Optional tooltip
     section_name: NotRequired[str] # Optional; internal section name for grouping menu items, e.g., GetAssetActions (TEXTURE ACTIONS). Automatically derives label from the name.
     also_in_folders: NotRequired[bool] # Optional: Makes the menu show up also in the folder's contex menu.
@@ -82,11 +82,11 @@ def menu_register(
         # Validates the target_module specification.
 
         label = item.get("label", function_name)
-        inject_ctx = item.get("inject_ctx", "")
+        inject_context = item.get("inject_context", "")
 
         cmd = (
             "import importlib; from AssetUtilities import dispatcher as _d; importlib.reload(_d); "
-            f"_d.run({module_path!r}, {function_name!r}, inject_ctx={inject_ctx!r}, debug={debug!r})"
+            f"_d.run({module_path!r}, {function_name!r}, inject_context={inject_context!r}, debug={debug!r})"
         )
         # Command executed by the Unreal, using the dispatcher, when the menu entry is clicked.
 

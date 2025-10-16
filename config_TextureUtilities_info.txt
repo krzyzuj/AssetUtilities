@@ -2,11 +2,11 @@
 Global:
 [optional]	         auto_save:  true/false        -  auto-saves unsaved assets before processing; false: logs and skips those assets
 [optional]	      show_details:  true/false        -  shows additional info in logs;   if empty: false
+[optional]            debug:     true/false        -  enables debug mode
 
 
 Generators:
 [optional]	 unreal_temp_folder:  folder name      -  destination folder for exporting source textures for channel packing;   if empty: creates TempFolder in the project /Game/ directory
-[optional]       dest_folder_name:  folder name    -  if set, saves generated textures into this subfolder [Content Browser]
 [optional]       backup_folder_name:  folder name  -  if set, moves files used for texture generation into this folder after packing is finished [Content Browser]
 [optional]        exr_srgb_curve:   true/false     -  if set, applies sRGB gamma curve when converting float texture2D, mimicking Photoshop behavior, when converting with gamma 1.0/exposure 0.0;  if empty: true
 [optional]	       delete_used:  true/false        -  deletes used source files after packing;  if empty: false
@@ -14,6 +14,7 @@ Generators:
 
 Channel Packer:
 [mandatory]         resize_strategy:  up/down      -  resolves resolution mismatches within a set, by scaling the textures up or down
+[optional]       target_folder_name:  folder name  -  if set, saves generated textures into this subfolder [Content Browser]
 		packing_modes:
 [mandatory]	          mode_name:  mode id          -  must not be empty to be considered by the function
 [optional]	      custom_suffix:  suffix name      -  custom suffix for the created textures;   if empty: it's generated from mapped texture types
@@ -23,41 +24,65 @@ Channel Packer:
 		              for RGB maps (e.g., Normal), specify the component to map, e.g., Normal_R
 
 
+Linear Color Curve Sampler:
+[mandatory]        swatch_count:   >=2 int         -  how many colors to sample from each texture; default if empty: 5
+[mandatory]        division_method:   method name  -  image's lightness partitioning method: | perceptual | uniform |   if empty: perceptual
+[mandatory]        export_preset:   preset name    -  which preset to use: | dominant | diverse | values | all (exports all three) |   if empty: values
+[mandatory]        light_band_size:   0-1 float    -  lightness band width for pixel weighting; larger = more color averaging;   if empty: 0.5
+[optional]         target_folder:   folder name    -  if set, saves generated curves into this subfolder [Content Browser]
+[optional]         custom_prefix:   prefix name    -  custom prefix for created curve assets;   if empty: "CC"
+[optional]         step_transition:   true/false   -  use step transitions between swatches instead of smooth interpolation
+[optional]         use_full_resolution: true/false -  if False, downscales the image for speed; set True to samples at full resolution.
+
+
+
+
+Channel Packer:
 more packing modes modules can be added if needed.
 
+    supported map names:
+    - AO,
+    - Roughness
+    - Metalness
+    - Height
+    - Mask
+    - Translucency
+    - Specular
+    - Normal
+    - BentNormal
+    - Bump
+    - Albedo
+    - SSS
+    - Emissive
+    - Glossiness
+
+    if additional map types are necessary, add their name, suffixes, and default values to TEXTURE_CONFIG in:
+    ...\AssetUtilities\TextureUtilities\ChannelPacker\settings.py
+
+
+    Texture compression settings types:
+
+    - Default
+    - Normalmap
+    - Masks
+    - Grayscale
+    - Displacementmap
+
+    if additional compression settings types are necessary, add their name and values to COMPRESSION_TYPES in:
+    ...\AssetUtilities\TextureUtilities\ChannelPacker\settings.py
 
 
 
-supported map names:
-
-- AO,
-- Roughness
-- Metalness
-- Height
-- Mask
-- Translucency
-- Specular
-- Normal
-- BentNormal
-- Bump
-- Albedo
-- SSS
-- Emissive
-- Glossiness
-
-if additional map types are necessary, add their name, suffixes, and default values to TEXTURE_CONFIG in:
-...\AssetUtilities\TextureUtilities\ChannelPacker\settings.py
 
 
+Linear Color Curve Sampler:
 
+    division method:
+    - perceptual - partitions lightness using a visually weighted distribution, denser keys where the image perceptual changes more.
+    - uniform - partitions lightness evenly across the 0–1 range.
 
-texture compression settings types:
-
-- Default
-- Normalmap
-- Masks
-- Grayscale
-- Displacementmap
-
-if additional compression settings types are necessary, add their name and values to COMPRESSION_TYPES in:
-...\AssetUtilities\TextureUtilities\ChannelPacker\settings.py
+    export presets:
+    - dominant - favors the most prevalent hues, picks the color that dominates each band.
+    - diverse - maximizes color variety, spreads samples across different hues by repelling previously chosen ones.
+    - values - prioritizes lightness levels.
+    - all - exports three curves each with different preset.
