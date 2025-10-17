@@ -51,34 +51,36 @@ Includes multiple lightness partition methods and hue-selection priorities for f
 
 ## Config
 
-| type           | mandatory | label               | input type                          | description                                                                             | if empty          |
-|----------------|-----------|---------------------|-------------------------------------|-----------------------------------------------------------------------------------------|-------------------|
-| GLOBAL         |           |                     |                                     |                                                                                         |                   |
-|                | no        | auto_save           | true/false                          | auto-saves unsaved assets before processing                                             | just logs unsaved |
-|                | no        | show_details        | true/false                          | shows additional info in logs                                                           | false             |
-|                | no        | debug               | true/false                          | enables debug mode                                                                      | false             |
-| GENERATORS     |           |                     |                                     |                                                                                         |                   |
-|                | no        | unreal_temp_folder  | folder path                         | destination folder for exporting source textures for channel packing                    | /Game/TempFolder  |
-|                | no        | backup_folder_name  | folder name                         | moves used files into this subfolder after packing [Content Browser]                    | -                 |
-|                | no        | exr_srgb_curve      | true/false                          | applies sRGB gamma curve when converting float texture2D, mimicking Photoshop behaviour | true              |
-|                | no        | delete_used         | true/false                          | deletes used source files after packing                                                 | false             |
-| CHANNEL_PACKER |           |                     |                                     |                                                                                         |                   |
-|                | yes       | resize_strategy     | "up"/"down"                         | resolves resolution mismatches within a set, by scaling the textures up or down         | "down"            |
-|                | no        | target_folder_name  | folder name                         | saves generated textures into this subfolder [Content Browser]                          | -                 |
-|                | yes       | mode_name           | mode id                             | must not be empty to be considered by the function                                      | x                 |
-|                | no        | custom_suffix       | suffix name                         | custom suffix for the created textures                                                  | auto              |
-|                | no        | texture_compression | setting name                        | texture compression preset                                                              | Default           |
-|                | no        | sRGB                | true/false                          | toggles the sRGB flag in the texture settings                                           | true              |
-|                | yes       | channels            | texture map types                   | textures mapped to each channel of the final generated texture; alpha can be left empty | x                 |
-| CURVE_SAMPLER  |           |                     |                                     |                                                                                         |                   |
-|                | yes       | swatch_count        | >=2 int                             | how many colors to sample from each texture                                             | 5                 |
-|                | yes       | division_method     | "perceptual"/"uniform"              | image's lightness partitioning method                                                   | "perceptual"      |
-|                | yes       | export_preset       | "dominant"/"diverse"/"values"/"all" | determines hue sampling priority                                                        | "values"          |
-|                | yes       | light_band_size     | 0-1 float                           | lightness band width for pixel weighting; larger = more color averaging                 | 0.5               |
-|                | no        | target_folder       | folder name                         | if set, saves generated curves into this subfolder [Content Browser]                    | -                 |
-|                | no        | custom_prefix       | prefix name                         | custom prefix for created curve assets                                                  | "CC"              |
-|                | no        | step_transition     | true/false                          | use step transitions between samples instead of smooth interpolation                    | false             |
-|                | no        | use_full_resolution | true/false                          | if false, downscales the image for speed; set true to samples at full resolution        | false             |
+| type           | mandatory | label                     | input type                          | description                                                                                      | if empty          |
+|----------------|-----------|---------------------------|-------------------------------------|--------------------------------------------------------------------------------------------------|-------------------|
+| GLOBAL         |           |                           |                                     |                                                                                                  |                   |
+|                | no        | auto_save                 | true/false                          | auto-saves unsaved assets before processing                                                      | just logs unsaved |
+|                | no        | show_details              | true/false                          | shows additional info in logs                                                                    | false             |
+|                | no        | debug                     | true/false                          | enables debug mode                                                                               | false             |
+| GENERATORS     |           |                           |                                     |                                                                                                  |                   |
+|                | no        | unreal_temp_folder        | folder path                         | destination folder for exporting source textures for channel packing                             | /Game/TempFolder  |
+|                | no        | backup_folder_name        | folder name                         | moves used files into this subfolder after packing [Content Browser]                             | -                 |
+|                | no        | exr_srgb_curve            | true/false                          | applies sRGB gamma curve when converting float texture2D, mimicking Photoshop behaviour          | true              |
+|                | no        | delete_used               | true/false                          | deletes used source files after packing                                                          | false             |
+| CHANNEL_PACKER |           |                           |                                     |                                                                                                  |                   |
+|                | yes       | resize_strategy           | "up"/"down"                         | resolves resolution mismatches within a set, by scaling the textures up or down                  | "down"            |
+|                | no        | target_folder_name        | folder name                         | saves generated textures into this subfolder [Content Browser]                                   | -                 |
+|                | yes       | mode_name                 | mode id                             | must not be empty to be considered by the function                                               | x                 |
+|                | no        | custom_suffix             | suffix name                         | custom suffix for the created textures                                                           | auto              |
+|                | no        | texture_compression       | setting name                        | texture compression preset                                                                       | Default           |
+|                | no        | sRGB                      | true/false                          | toggles the sRGB flag in the texture settings                                                    | true              |
+|                | yes       | channels                  | texture map types                   | textures mapped to each channel of the final generated texture; alpha can be left empty          | x                 |
+| CURVE_SAMPLER  |           |                           |                                     |                                                                                                  |                   |
+|                | yes       | swatch_count              | >=2 int                             | how many colors to sample from each texture                                                      | 5                 |
+|                | yes       | division_method           | "perceptual"/"uniform"              | image's lightness partitioning method                                                            | "perceptual"      |
+|                | yes       | export_preset             | "dominant"/"diverse"/"values"/"all" | determines hue sampling priority                                                                 | "values"          |
+|                | yes       | light_band_size           | 0-1 float                           | lightness band width for pixel weighting; larger = more color averaging                          | 0.5               |
+|                | no        | target_folder             | folder name                         | if set, saves generated curves into this subfolder [Content Browser]                             | -                 |
+|                | no        | custom_prefix             | prefix name                         | custom prefix for created Curve assets                                                           | "CC"              |
+|                | no        | step_transition           | true/false                          | use step transitions between samples instead of smooth interpolation                             | false             |
+|                | no        | use_full_resolution       | true/false                          | if false, downscales the image for speed; set true to samples at full resolution                 | false             |
+|                | no        | create_curve_atlas        | true/false                          | if true, creates Curve Atlas for each sampled texture, and assigns all generated curves to each. | false             |
+|                | no        | custom_curve_atlas_prefix | prefix name                         | custom prefix for created Curve Atlas                                                            | "CA"              |
 
 ---
 

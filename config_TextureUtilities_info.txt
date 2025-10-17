@@ -25,16 +25,16 @@ Channel Packer:
 
 
 Linear Color Curve Sampler:
-[mandatory]        swatch_count:   >=2 int         -  how many colors to sample from each texture; default if empty: 5
-[mandatory]        division_method:   method name  -  image's lightness partitioning method: | perceptual | uniform |   if empty: perceptual
-[mandatory]        export_preset:   preset name    -  which preset to use: | dominant | diverse | values | all (exports all three) |   if empty: values
-[mandatory]        light_band_size:   0-1 float    -  lightness band width for pixel weighting; larger = more color averaging;   if empty: 0.5
-[optional]         target_folder:   folder name    -  if set, saves generated curves into this subfolder [Content Browser]
-[optional]         custom_prefix:   prefix name    -  custom prefix for created curve assets;   if empty: "CC"
-[optional]         step_transition:   true/false   -  use step transitions between swatches instead of smooth interpolation
-[optional]         use_full_resolution: true/false -  if False, downscales the image for speed; set True to samples at full resolution.
-
-
+[mandatory]        swatch_count:   >=2 int                 -  how many colors to sample from each texture; default if empty: 5
+[mandatory]        division_method:   method name          -  image's lightness partitioning method: | perceptual | uniform |   if empty: perceptual
+[mandatory]        export_preset:   preset name            -  which preset to use: | dominant | diverse | values | all (exports all three) |   if empty: values
+[mandatory]        light_band_size:   0-1 float            -  lightness band width for pixel weighting; larger = more color averaging;   if empty: 0.5
+[optional]         target_folder:   folder name            -  if set, saves generated curves into this subfolder [Content Browser]
+[optional]         custom_prefix:   prefix name            -  custom prefix for created Curve assets;   if empty: "CC"
+[optional]         step_transition:   true/false           -  use step transitions between swatches instead of smooth interpolation
+[optional]         use_full_resolution: true/false         -  if False, downscales the image for speed; set True to samples at full resolution.
+[optional]         create_curve_atlas: true/false          -  if True, creates Curve Atlas for each sampled texture, and assigns all generated curves to each.
+[optional]         custom_curve_atlas_prefix: prefix name  -  custom prefix for created Curve Atlas;   if empty: "CA"
 
 
 Channel Packer:

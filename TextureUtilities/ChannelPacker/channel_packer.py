@@ -245,10 +245,10 @@ def channel_packer(input_folder: Optional[str] = None) -> None:
                 valid_packing_modes,
                 valid_packing_modes_with_maps,
                 expected_texture_resolution,
-                context=context,
-                invalid_packing_modes=invalid_mode_names_for_set,
-                invalid_packing_mode_dimensions=invalid_resolution_for_summary,
-                log_prefix=log_prefix
+                context = context,
+                invalid_packing_modes = invalid_mode_names_for_set,
+                invalid_packing_mode_dimensions = invalid_resolution_for_summary,
+                log_prefix = log_prefix
             )
 
 

@@ -56,13 +56,15 @@
   },
 
  "linear_color_curve_sampler": {
-   "CUSTOM_PREFIX": "",
-   "TARGET_FOLDER_NAME": "generated_curves",
    "SWATCH_COUNT": 5,
-   "EXPORT_PRESET": "all",
    "DIVISION_METHOD": "perceptual",
+   "EXPORT_PRESET": "all",
    "LIGHT_BAND_SIZE": 0.5,
+   "TARGET_FOLDER_NAME": "generated_curves",
+   "CUSTOM_PREFIX": "",
    "STEP_TRANSITION": false,
-   "USE_FULL_RESOLUTION": false
+   "USE_FULL_RESOLUTION": false,
+   "CREATE_CURVE_ATLAS": true,
+   "CUSTOM_CURVE_ATLAS_PREFIX": ""
  }
 }

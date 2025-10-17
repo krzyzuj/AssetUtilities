@@ -66,8 +66,8 @@ COLORCURVE_TARGET_FOLDER_NAME: str = _color_curve_cfg.get("TARGET_FOLDER_NAME", 
 CUSTOM_PREFIX: str = _color_curve_cfg.get("CUSTOM_PREFIX", "").strip() # Optional prefix added to the generated asset name.
 STEP_TRANSITION: bool =_as_bool(_color_curve_cfg.get("STEP_TRANSITION", False))  # Uses step transitions between swatches for the created curve (instead of smooth interpolation).
 USE_FULL_RESOLUTION: bool =_as_bool(_color_curve_cfg.get("USE_FULL_RESOLUTION", False)) # If False, downscales the image for speed; set True to samples at full resolution.
-
-
+CREATE_CURVE_ATLAS: bool =_as_bool(_color_curve_cfg.get("CREATE_CURVE_ATLAS", False))
+CUSTOM_CURVE_ATLAS_PREFIX = _color_curve_cfg.get("CUSTOM_CURVE_ATLAS_PREFIX", "").strip()
 
 
 #                                           === Constants ===

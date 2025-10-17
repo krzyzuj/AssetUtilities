@@ -13,7 +13,7 @@ from ...common_utils import (clear_source_file_for_asset, log, validate_safe_fol
 
 from ..image_lib import (get_size, ImageObject, linear_01_to_srgb, new_image, open_image, paste, resize_nearest, save_image, srgb_image_to_linear_channels_01, srgb_to_linear01)
 
-from ..texture_settings import (CUSTOM_PREFIX, COLORCURVE_TARGET_FOLDER_NAME as TARGET_FOLDER_NAME, SWATCH_COUNT, EXPORT_PRESET, DIVISION_METHOD, LIGHT_BAND_SIZE, STEP_TRANSITION, USE_FULL_RESOLUTION, BACKUP_FOLDER_NAME, DEBUG)
+from ..texture_settings import (CUSTOM_PREFIX, COLORCURVE_TARGET_FOLDER_NAME as TARGET_FOLDER_NAME, SWATCH_COUNT, EXPORT_PRESET, DIVISION_METHOD, LIGHT_BAND_SIZE, STEP_TRANSITION, USE_FULL_RESOLUTION, CREATE_CURVE_ATLAS, CUSTOM_CURVE_ATLAS_PREFIX, BACKUP_FOLDER_NAME, DEBUG)
 
 from ..texture_io_backend import (cleanup, CPContext, list_initial_files, move_used_map, prepare_workspace, split_by_parent,)
 
@@ -103,11 +103,24 @@ def linear_color_curve_sampler():
                         created_previews.append(previews)
                 # Processing each set preset for the current file.
 
+                if CREATE_CURVE_ATLAS:
+                    curve_paths = [asset_path for asset_path in imported_assets if asset_path]
+
+                    atlas_path = create_or_update_curve_atlas(
+                        curve_asset_name=asset_name,
+                        curve_package_paths=curve_paths,
+                        target_content_browser_path=target_folder_package_path
+                    )
+                    if not atlas_path:
+                        log(f"[linear Color Curve Sampler] Unable to create/update curve atlas for: '{asset_name}'",
+                            "error")
+                # Creates a Curve Atlas and plugs generated curves to their coressponding atlases.
+
                 move_used_map(target_file_absolute_path, backup_directory, context) # Moves the source map into the backup directory only when BACKUP_FOLDER_NAME is set in the config.
 
             if DEBUG:
-                log("[Color Float Curve Generator] Successfully imported:\n" + "\n".join(f"  - {name}" for name in created_previews),"info")
-                log("[Color Float Curve Generator] Successfully imported:\n" + "\n".join(f"  - {name}" for name in imported_assets),"info")
+                log("[linear Color Curve Sampler] Successfully imported:\n" + "\n".join(f"  - {name}" for name in created_previews),"info")
+                log("[linear Color Curve Sampler] Successfully imported:\n" + "\n".join(f"  - {name}" for name in imported_assets),"info")
                 # Prints info.
 
 
@@ -424,12 +437,12 @@ def export_swatches_csv(*, results: Sequence[SwatchResult], preset: PresetName, 
             return None
 
         curve_object_path: str = f"{curve_package_path}.{csv_file_name}"
-        asset_object: Optional[unreal.Object] = unreal.EditorAssetLibrary.load_asset(curve_object_path)
-        if not asset_object:
+        curve_asset: Optional[unreal.Object] = unreal.EditorAssetLibrary.load_asset(curve_object_path)
+        if not curve_asset:
             log(f"[Export Swatches CSV] Failed to load imported asset: '{curve_object_path}'", "error")
             return None
 
-        source_file_cleared: bool = clear_source_file_for_asset(asset_object)
+        source_file_cleared: bool = clear_source_file_for_asset(curve_asset)
         if not source_file_cleared:
             log(f"[Export Swatches CSV] clear_source_file_for_asset(): nothing changed for '{curve_object_path}'", "warning")
         # Clearing the path to the Source File in Curve's details.
@@ -513,6 +526,61 @@ def create_swatch_previews(*, results: Sequence[SwatchResult], preset: PresetNam
         except Exception as e:
             log(f"[Swatch Export] Error deleting temporary file: {e}", "error")
     return imported_asset
+
+
+def create_or_update_curve_atlas(*, curve_asset_name: str, curve_package_paths: Sequence[str], target_content_browser_path: str) -> Optional[str]:
+# Creates or updates (if already exists) the Curve Atlas for the created curves.
+# Returns Curve Atlas package path or None.
+
+# Preparing the Curve Atlas:
+    if CUSTOM_CURVE_ATLAS_PREFIX:
+        atlas_name = f"{CUSTOM_CURVE_ATLAS_PREFIX}_{curve_asset_name}"
+    else:
+        atlas_name = f"CA_{curve_asset_name}"
+
+
+    unreal.EditorAssetLibrary.make_directory(target_content_browser_path)
+    atlas_package_path = f"{target_content_browser_path}/{atlas_name}"
+    atlas_object_path = f"{atlas_package_path}.{atlas_name}"
+
+    atlas_asset = None
+    if unreal.EditorAssetLibrary.does_asset_exist(atlas_object_path):
+        atlas_asset = unreal.EditorAssetLibrary.load_asset(atlas_object_path)
+
+    else:
+        factory = unreal.CurveLinearColorAtlasFactory()
+        atlas_asset = unreal.AssetToolsHelpers.get_asset_tools().create_asset(
+            asset_name = atlas_name,
+            package_path = target_content_browser_path,
+            asset_class = unreal.CurveLinearColorAtlas,
+            factory = factory
+        )
+        if not atlas_asset:
+            log(f"[Create or Update Curve Atlas] Unable to create Curve Atlas: '{atlas_package_path}'", "error")
+            return None
+    # Creating a new Curve Atlas.
+
+
+# Loading created curve assets:
+    loaded_curve_assets: list[unreal.Object] = []
+    for curve_package_path in curve_package_paths:
+        if not curve_package_path:
+            continue
+        curve_asset_name: str = curve_package_path.rsplit("/", 1)[-1]
+        curve_object_path = f"{curve_package_path}.{curve_asset_name}"
+        curve_asset = unreal.EditorAssetLibrary.load_asset(curve_object_path)
+        if curve_asset:
+            loaded_curve_assets.append(curve_asset)
+        else:
+            log(f"[Create or Update Curve Atlas] Unable to load selected curve: '{curve_object_path}'", "warning")
+
+
+# Setting up and saving Curves in the Atlas:
+    atlas_asset.set_editor_property("gradient_curves", []) # Clearing the values (in case of updating the same Curve Atlas).
+    atlas_asset.set_editor_property("gradient_curves", loaded_curve_assets)
+
+    unreal.EditorAssetLibrary.save_asset(atlas_object_path, only_if_is_dirty = False)
+    return atlas_package_path
 
 
 
