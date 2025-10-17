@@ -579,6 +579,10 @@ def create_or_update_curve_atlas(*, curve_asset_name: str, curve_package_paths: 
     atlas_asset.set_editor_property("gradient_curves", []) # Clearing the values (in case of updating the same Curve Atlas).
     atlas_asset.set_editor_property("gradient_curves", loaded_curve_assets)
 
+    atlas_asset.set_editor_property("square_resolution", False)
+    atlas_asset.set_editor_property("texture_height", len(loaded_curve_assets) or 1)
+    # Scaling atlas size for a better preview.
+
     unreal.EditorAssetLibrary.save_asset(atlas_object_path, only_if_is_dirty = False)
     return atlas_package_path
 
